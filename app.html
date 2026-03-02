@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PSP Disc Image Converter</title>
+<!-- __STYLES__ -->
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+  <h1>PSP Disc Image Converter</h1>
+  <p class="subtitle">CSO/ZSO/ISO conversion, PS1-to-EBOOT, and EBOOT inspector &mdash; entirely in your browser</p>
+
+  <div class="app-layout">
+    <nav class="sidebar">
+      <button class="tab-btn active" data-tab="convert">
+        <span class="tab-icon">&#128190;</span> Convert
+      </button>
+      <button class="tab-btn" data-tab="eboot">
+        <span class="tab-icon">&#128191;</span> EBOOT
+      </button>
+      <button class="tab-btn" data-tab="diagnose">
+        <span class="tab-icon">&#128269;</span> Diagnose
+      </button>
+    </nav>
+
+    <main class="tab-content">
+
+      <!-- ═══ Convert Tab ═══ -->
+      <div class="tab-panel active" id="panel-convert">
+        <div class="drop-zone" id="convertDropZone" data-testid="convert-drop-zone">
+          <span class="icon">&#128190;</span>
+          <p>Drop a disc image here<br><small>.cso, .zso, or .iso files</small></p>
+        </div>
+        <input type="file" id="convertFileInput" data-testid="convert-file-input" accept=".cso,.zso,.iso">
+
+        <div class="file-info" id="convertFileInfo">
+          <div class="name" id="convertFileName"></div>
+          <div class="meta" id="convertFileMeta"></div>
+        </div>
+
+        <div class="actions" id="convertActions" data-testid="convert-actions"></div>
+
+        <div class="convert-opts" id="convertOpts" data-testid="convert-opts" style="display:none">
+          <label>Workers</label>
+          <div class="range-row">
+            <input type="range" id="convertThreads" data-testid="convert-threads" min="1" max="8" value="2">
+            <span class="range-val" id="convertThreadsVal">2</span>
+          </div>
+        </div>
+
+        <div class="progress-area" id="convertProgressArea">
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="convertProgressFill"></div></div>
+          <div class="progress-text">
+            <span id="convertProgressLabel">Processing...</span>
+            <span id="convertProgressPct" data-testid="convert-progress-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="status" id="convertStatus" data-testid="convert-status"></div>
+      </div>
+
+      <!-- ═══ EBOOT Tab ═══ -->
+      <div class="tab-panel" id="panel-eboot">
+        <div class="drop-zone" id="ebootDropZone" data-testid="eboot-drop-zone">
+          <span class="icon">&#128191;</span>
+          <p>Drop PS1 disc image(s) here<br><small>.bin, .cue files (PS1)</small></p>
+        </div>
+        <input type="file" id="ebootFileInput" data-testid="eboot-file-input" accept=".bin,.img,.cue" multiple>
+
+        <div class="file-info" id="ebootFileInfo">
+          <div class="name" id="ebootFileName"></div>
+          <div class="meta" id="ebootFileMeta"></div>
+        </div>
+
+        <div class="disc-list" id="discList" data-testid="eboot-disc-list"></div>
+        <div class="add-disc-hint" id="addDiscHint" style="display:none">Drop more discs to add them (up to 5)</div>
+
+        <div class="eboot-opts" id="ebootOpts">
+          <label for="ebootTitle">Game Title</label>
+          <input type="text" id="ebootTitle" data-testid="eboot-title" placeholder="e.g. FINAL FANTASY VII">
+          <label for="ebootDiscId">Disc ID <span class="detected" id="discIdDetected"></span></label>
+          <input type="text" id="ebootDiscId" data-testid="eboot-disc-id" placeholder="e.g. SCUS94163">
+          <label>Compression Level <span class="info-tip" title="Level 6 offers a good balance of size and speed. Higher levels take significantly longer with diminishing returns.">&#9432;</span></label>
+          <div class="range-row">
+            <input type="range" id="ebootCompression" min="0" max="9" value="5">
+            <span class="range-val" id="ebootCompressionVal">5</span>
+            <span class="range-label" id="ebootCompressionLabel">High</span>
+          </div>
+          <label>Workers</label>
+          <div class="range-row">
+            <input type="range" id="ebootThreads" min="1" max="8" value="2">
+            <span class="range-val" id="ebootThreadsVal">2</span>
+          </div>
+          <details class="misc-section">
+            <summary>Advanced</summary>
+            <div class="misc-inner">
+              <label class="checkbox-row">
+                <input type="checkbox" id="ebootFetchArt"> Fetch artwork by disc ID
+              </label>
+              <label for="ebootParentalLevel">Parental Level</label>
+              <select id="ebootParentalLevel">
+                <option value="1">1 &ndash; Youngest</option>
+                <option value="2">2 &ndash; Early Childhood</option>
+                <option value="3" selected>3 &ndash; Everyone</option>
+                <option value="4">4 &ndash; Everyone 10+</option>
+                <option value="5">5 &ndash; Teen</option>
+                <option value="9">9 &ndash; Mature</option>
+                <option value="10">10 &ndash; Adults Only</option>
+                <option value="11">11 &ndash; Unrestricted</option>
+              </select>
+              <label for="ebootRegion">Region</label>
+              <select id="ebootRegion">
+                <option value="0x8000" selected>NTSC-U (Americas)</option>
+                <option value="0x4000">NTSC-J (Japan)</option>
+                <option value="0x0001">PAL (Europe/Australia)</option>
+              </select>
+            </div>
+          </details>
+          <div class="artwork-section">
+            <label>Artwork (click to replace)</label>
+            <div class="artwork-row">
+              <div class="artwork-slot">
+                <span class="art-label">ICON0</span>
+                <img class="art-preview" id="artIcon0">
+                <input type="file" id="artIcon0Input" accept="image/png,image/jpeg" style="display:none">
+                <span class="art-dims">144x80</span>
+                <button class="art-reset" id="artIcon0Reset">reset</button>
+              </div>
+              <div class="artwork-slot">
+                <span class="art-label">PIC0</span>
+                <img class="art-preview" id="artPic0">
+                <input type="file" id="artPic0Input" accept="image/png,image/jpeg" style="display:none">
+                <span class="art-dims">310x180</span>
+                <button class="art-reset" id="artPic0Reset">reset</button>
+              </div>
+              <div class="artwork-slot">
+                <span class="art-label">PIC1</span>
+                <img class="art-preview" id="artPic1">
+                <input type="file" id="artPic1Input" accept="image/png,image/jpeg" style="display:none">
+                <span class="art-dims">480x272</span>
+                <button class="art-reset" id="artPic1Reset">reset</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions" id="ebootActions" data-testid="eboot-actions"></div>
+
+        <div class="progress-area" id="ebootProgressArea">
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="ebootProgressFill"></div></div>
+          <div class="progress-text">
+            <span id="ebootProgressLabel">Processing...</span>
+            <span id="ebootProgressPct" data-testid="eboot-progress-pct">0%</span>
+            <button class="cancel-btn" id="ebootCancelBtn" title="Cancel build">&times;</button>
+          </div>
+        </div>
+
+        <div class="status" id="ebootStatus" data-testid="eboot-status"></div>
+        <div class="build-log-area" id="buildLogArea" style="display:none">
+          <a href="#" id="buildLogLink" download="eboot-build-log.txt">Download Build Log</a>
+        </div>
+      </div>
+
+      <!-- ═══ Diagnose Tab ═══ -->
+      <div class="tab-panel" id="panel-diagnose">
+        <div class="drop-zone" id="diagnoseDropZone">
+          <span class="icon">&#128269;</span>
+          <p>Drop an EBOOT.PBP here<br><small>Inspect PBP structure, SFO, PSAR layout</small></p>
+        </div>
+        <input type="file" id="diagnoseFileInput" accept=".pbp">
+
+        <div class="file-info" id="diagnoseFileInfo">
+          <div class="name" id="diagnoseFileName"></div>
+          <div class="meta" id="diagnoseFileMeta"></div>
+        </div>
+
+        <div class="progress-area" id="diagnoseProgressArea">
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="diagnoseProgressFill"></div></div>
+          <div class="progress-text">
+            <span id="diagnoseProgressLabel">Inspecting...</span>
+            <span id="diagnoseProgressPct">0%</span>
+          </div>
+        </div>
+
+        <div class="status" id="diagnoseStatus"></div>
+        <div class="diagnose-results" id="diagnoseResults"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Worker scripts are inlined here during build -->
+<!-- __WORKERS__ -->
+<!-- Application scripts are inlined here during build -->
+<!-- __SCRIPTS__ -->
+<script src="vendor/zlib.browser.js"></script>
+<script src="ui/shared.js"></script>
+<script src="ui/artwork-fetch.js"></script>
+<script src="ui/convert.js"></script>
+<script src="ui/eboot-ui.js"></script>
+<script src="ui/diagnose.js"></script>
+</body>
+</html>

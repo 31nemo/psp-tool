@@ -1,0 +1,27 @@
+FROM mcr.microsoft.com/playwright:v1.58.2
+
+LABEL project=psp-toolkit purpose=e2e-test
+
+WORKDIR /app
+
+# Layer 1: deps (cached unless package.json/lock changes)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Layer 2: source code that affects build + unit tests (cached unless app code changes)
+COPY vendor/ vendor/
+COPY cso/ cso/
+COPY eboot/ eboot/
+COPY ui/ ui/
+COPY app.html style.css build.js ./
+COPY worker.js compress-worker.js cso-compress-worker.js eboot-worker.js ./
+RUN node build.js
+
+# Layer 3: test infrastructure (changes here don't invalidate build)
+COPY test/ test/
+COPY scripts/ scripts/
+COPY playwright.config.js ./
+RUN node scripts/generate-e2e-fixture.js && node scripts/generate-eboot-fixtures.js
+
+# If no Linux snapshots exist yet, generate them; otherwise just run tests.
+CMD sh -c 'npm test && npx playwright test'

@@ -1,0 +1,6 @@
+.DS_Store
+dist/
+node_modules/
+vendor/zlib.browser.js
+test-results/
+playwright-report/
