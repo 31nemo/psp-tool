@@ -35,14 +35,6 @@ node build.js
 open dist/index.html
 ```
 
-### Development
-
-```sh
-python3 -m http.server 8000
-```
-
-Then open http://localhost:8000/app.html. This loads scripts directly for easier debugging.
-
 ### Testing
 
 ```sh
