@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Patch tab for applying IPS, PPF, BPS, and xdelta/VCDIFF patches to disc images
+- Multi-disc patch support — apply separate patches to each disc in a set
+- Pure JS VCDIFF (RFC 3284) decoder with LZMA secondary compression support
+- Pure JS XZ/LZMA2 decompressor for xdelta3 patches
+- PPF v1/v2/v3 with block check validation
+- BPS with full CRC32 validation (source, target, patch)
+- Multi-file drag-and-drop with automatic ROM/patch classification
+- Diagnose tab accepts any file type, not just EBOOT.PBP — inspectors for CSO, ZSO, BIN/ISO, CUE, IPS, PPF, BPS, and VCDIFF
+- Deep patch inspection: IPS record counts and patched ranges, PPF version/block check/undo flags, BPS command breakdown and CRC32s, VCDIFF window count/sizes and secondary compression type
+- Hex dump fallback for unknown file formats
+- Format badge and one-line summary for all inspected files
+- EBOOT results reorganized into Header/SFO/PSAR sub-tabs
+- E2E Playwright tests for all patch formats and all diagnose inspectors
+- MIT license
+
+### Changed
+
+- Larger fonts, wider layout, and more padding throughout the UI
+- Table row striping and cleaner spacing in diagnose output
+
 ## [0.1.0] - 2026-03-07
 
 ### Added
