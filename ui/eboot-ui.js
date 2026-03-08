@@ -767,19 +767,24 @@ async function startEbootBuild() {
       }
     } else if (msg.type === 'done') {
       showEbootProgress(0.97, 'Packaging ZIP...');
-      // Double-rAF: first frame renders the label, second frame does the blocking zip
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const zipPath = discId + '/EBOOT.PBP';
-          const zipData = createZip(zipPath, msg.result);
-          const zipName = discId + '.zip';
-          download(zipData, zipName);
-          const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-          ebootStatusEl.textContent = `Done in ${elapsed}s \u2014 ${formatSize(msg.result.length)} saved as ${zipName}`;
-          showEbootProgress(1, 'Complete');
-          if (msg.buildLog) showBuildLogDownload(msg.buildLog);
-          finish();
-        });
+      const ebootResult = new Uint8Array(msg.result);
+      const ebootSize = ebootResult.length;
+      const zipPath = discId + '/EBOOT.PBP';
+      createZipInWorker([{ name: zipPath, data: ebootResult }], (phase) => {
+        const step = phase === 'crc' ? 'Checksumming' : phase === 'alloc' ? 'Allocating' : 'Copying';
+        showEbootProgress(0.97, `Packaging ZIP \u2014 ${step}...`);
+      }).then(zipData => {
+        const zipName = discId + '.zip';
+        download(zipData, zipName);
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+        ebootStatusEl.textContent = `Done in ${elapsed}s \u2014 ${formatSize(ebootSize)} saved as ${zipName}`;
+        showEbootProgress(1, 'Complete');
+        if (msg.buildLog) showBuildLogDownload(msg.buildLog);
+        finish();
+      }).catch(err => {
+        ebootStatusEl.textContent = `ZIP error: ${err.message}`;
+        ebootStatusEl.className = 'status error';
+        finish();
       });
     } else if (msg.type === 'error') {
       ebootStatusEl.textContent = `Error: ${msg.message}`;

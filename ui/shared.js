@@ -53,68 +53,113 @@ function crc32(data) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-/** Create a ZIP archive containing a single stored (uncompressed) file. */
-function createZip(filename, data) {
+/** Create a ZIP archive containing one or more stored (uncompressed) files.
+ *  @param {Array<{name: string, data: Uint8Array}>} entries */
+function createZip(entries) {
   const enc = new TextEncoder();
-  const nameBytes = enc.encode(filename);
-  const crc = crc32(data);
-  const size = data.length;
-  const nameLen = nameBytes.length;
 
-  const totalSize = 30 + nameLen + size + 46 + nameLen + 22;
+  // Pre-compute per-entry metadata
+  const meta = entries.map(e => {
+    const nameBytes = enc.encode(e.name);
+    return { nameBytes, crc: crc32(e.data), size: e.data.length, nameLen: nameBytes.length };
+  });
+
+  // Total size: local headers + data + central directory + EOCD
+  const localSize = meta.reduce((sum, m) => sum + 30 + m.nameLen + m.size, 0);
+  const cdSize = meta.reduce((sum, m) => sum + 46 + m.nameLen, 0);
+  const totalSize = localSize + cdSize + 22;
+
   const buf = new ArrayBuffer(totalSize);
   const view = new DataView(buf);
   const bytes = new Uint8Array(buf);
   let off = 0;
 
-  // Local file header
-  view.setUint32(off, 0x04034B50, true); off += 4;
-  view.setUint16(off, 20, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint32(off, crc, true); off += 4;
-  view.setUint32(off, size, true); off += 4;
-  view.setUint32(off, size, true); off += 4;
-  view.setUint16(off, nameLen, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  bytes.set(nameBytes, off); off += nameLen;
-  bytes.set(data, off); off += size;
+  // Track local header offsets for the central directory
+  const localOffsets = [];
 
-  // Central directory header
+  // Local file headers + data
+  for (let i = 0; i < entries.length; i++) {
+    const m = meta[i];
+    localOffsets.push(off);
+    view.setUint32(off, 0x04034B50, true); off += 4;
+    view.setUint16(off, 20, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint32(off, m.crc, true); off += 4;
+    view.setUint32(off, m.size, true); off += 4;
+    view.setUint32(off, m.size, true); off += 4;
+    view.setUint16(off, m.nameLen, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    bytes.set(m.nameBytes, off); off += m.nameLen;
+    bytes.set(entries[i].data, off); off += m.size;
+  }
+
+  // Central directory
   const cdOffset = off;
-  view.setUint32(off, 0x02014B50, true); off += 4;
-  view.setUint16(off, 20, true); off += 2;
-  view.setUint16(off, 20, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint32(off, crc, true); off += 4;
-  view.setUint32(off, size, true); off += 4;
-  view.setUint32(off, size, true); off += 4;
-  view.setUint16(off, nameLen, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 0, true); off += 2;
-  view.setUint32(off, 0, true); off += 4;
-  view.setUint32(off, 0, true); off += 4;
-  bytes.set(nameBytes, off); off += nameLen;
+  for (let i = 0; i < entries.length; i++) {
+    const m = meta[i];
+    view.setUint32(off, 0x02014B50, true); off += 4;
+    view.setUint16(off, 20, true); off += 2;
+    view.setUint16(off, 20, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint32(off, m.crc, true); off += 4;
+    view.setUint32(off, m.size, true); off += 4;
+    view.setUint32(off, m.size, true); off += 4;
+    view.setUint16(off, m.nameLen, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint16(off, 0, true); off += 2;
+    view.setUint32(off, 0, true); off += 4;
+    view.setUint32(off, localOffsets[i], true); off += 4;
+    bytes.set(m.nameBytes, off); off += m.nameLen;
+  }
 
   // End of central directory
-  const cdSize = off - cdOffset;
+  const cdLen = off - cdOffset;
   view.setUint32(off, 0x06054B50, true); off += 4;
   view.setUint16(off, 0, true); off += 2;
   view.setUint16(off, 0, true); off += 2;
-  view.setUint16(off, 1, true); off += 2;
-  view.setUint16(off, 1, true); off += 2;
-  view.setUint32(off, cdSize, true); off += 4;
+  view.setUint16(off, entries.length, true); off += 2;
+  view.setUint16(off, entries.length, true); off += 2;
+  view.setUint32(off, cdLen, true); off += 4;
   view.setUint32(off, cdOffset, true); off += 4;
   view.setUint16(off, 0, true); off += 2;
 
   return new Uint8Array(buf);
+}
+
+/** Create a ZIP archive in a Web Worker (off the main thread).
+ *  @param {Array<{name: string, data: Uint8Array}>} entries
+ *  @param {function(string, number, number): void} [onProgress] - called with (phase, index, total)
+ *  @returns {Promise<Uint8Array>} */
+function createZipInWorker(entries, onProgress) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('zip-worker.js');
+    const transferList = entries.map(e => e.data.buffer);
+    worker.onmessage = function(e) {
+      const msg = e.data;
+      if (msg.type === 'progress') {
+        if (onProgress) onProgress(msg.phase, msg.index, msg.total);
+      } else if (msg.type === 'done') {
+        worker.terminate();
+        resolve(new Uint8Array(msg.result));
+      }
+    };
+    worker.onerror = function(err) {
+      worker.terminate();
+      reject(new Error(err.message || String(err)));
+    };
+    worker.postMessage(
+      { entries: entries.map(e => ({ name: e.name, data: e.data.buffer })) },
+      transferList
+    );
+  });
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────

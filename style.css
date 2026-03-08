@@ -504,3 +504,118 @@ input[type="file"] { display: none; }
     font-size: 0.75rem;
   }
 }
+
+/* Patch tab — staged files */
+.patch-staged {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+.patch-slot {
+  flex: 1;
+  background: var(--bg-panel);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border-muted);
+}
+.patch-slot.filled {
+  border-color: var(--accent);
+}
+.patch-slot-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+.patch-slot-value {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.patch-slot.filled .patch-slot-value {
+  color: var(--text-white);
+  font-weight: 600;
+}
+.patch-actions {
+  display: flex;
+}
+.btn-patch {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.btn-patch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-patch-clear {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-muted);
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+}
+.btn-patch-clear:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Patch file lists (multi-disc) */
+.patch-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.4rem;
+}
+.patch-file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg);
+  padding: 0.3rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  cursor: grab;
+  border: 1px solid transparent;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.patch-file-item.dragging { opacity: 0.4; }
+.patch-file-item.drag-over { border-color: var(--accent); }
+.patch-file-num {
+  color: var(--accent);
+  font-weight: 700;
+  min-width: 1.2em;
+  text-align: center;
+}
+.patch-file-name {
+  flex: 1;
+  color: var(--text-light);
+  word-break: break-all;
+}
+.patch-file-size {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.patch-file-remove {
+  background: none;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 0.2rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+.patch-file-remove:hover { opacity: 1; }

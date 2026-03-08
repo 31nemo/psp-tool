@@ -24,6 +24,9 @@
       <button class="tab-btn" data-tab="diagnose">
         <span class="tab-icon">&#128269;</span> Diagnose
       </button>
+      <button class="tab-btn" data-tab="patch">
+        <span class="tab-icon">&#129529;</span> Patch
+      </button>
     </nav>
 
     <main class="tab-content">
@@ -189,6 +192,43 @@
         <div class="diagnose-results" id="diagnoseResults"></div>
       </div>
 
+      <!-- ═══ Patch Tab ═══ -->
+      <div class="tab-panel" id="panel-patch">
+        <div class="drop-zone" id="patchDropZone" data-testid="patch-drop-zone">
+          <span class="icon">&#129529;</span>
+          <p>Drop disc image + patch file here<br><small>.bin/.iso + .ips/.ppf/.bps/.xdelta</small></p>
+        </div>
+        <input type="file" id="patchFileInput" data-testid="patch-file-input" accept=".bin,.iso,.img,.ips,.ppf,.bps,.xdelta,.vcdiff" multiple>
+
+        <div class="patch-staged" id="patchStaged" data-testid="patch-staged">
+          <div class="patch-slot" id="patchRomSlot" data-testid="patch-rom-slot">
+            <span class="patch-slot-label">Disc images</span>
+            <span class="patch-slot-value" id="patchRomName">None</span>
+            <div class="patch-file-list" id="patchRomList" data-testid="patch-rom-list"></div>
+          </div>
+          <div class="patch-slot" id="patchPatchSlot" data-testid="patch-patch-slot">
+            <span class="patch-slot-label">Patch files</span>
+            <span class="patch-slot-value" id="patchPatchName">None</span>
+            <div class="patch-file-list" id="patchPatchList" data-testid="patch-patch-list"></div>
+          </div>
+        </div>
+
+        <div class="actions patch-actions">
+          <button class="btn-patch" id="patchApplyBtn" data-testid="apply-patch" disabled title="Drop a disc image and a patch file">Apply Patch</button>
+          <button class="btn-patch-clear" id="patchClearBtn" data-testid="patch-clear" style="display:none">Clear</button>
+        </div>
+
+        <div class="progress-area" id="patchProgressArea">
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="patchProgressFill"></div></div>
+          <div class="progress-text">
+            <span id="patchProgressLabel">Reading files...</span>
+            <span id="patchProgressPct" data-testid="patch-progress-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="status" id="patchStatus" data-testid="patch-status"></div>
+      </div>
+
     </main>
   </div>
 </div>
@@ -203,5 +243,6 @@
 <script src="ui/convert.js"></script>
 <script src="ui/eboot-ui.js"></script>
 <script src="ui/diagnose.js"></script>
+<script src="ui/patch.js"></script>
 </body>
 </html>

@@ -118,15 +118,18 @@ const uiPartials = [
   'ui/convert.js',
   'ui/eboot-ui.js',
   'ui/diagnose.js',
+  'ui/patch.js',
 ];
 const uiCode = uiPartials.map(read).join('\n');
 
 // Bundle all workers with esbuild
-const [csoWorkerCode, ebootWorkerCode, compressWorkerCode, csoCompressWorkerCode] = await Promise.all([
+const [csoWorkerCode, ebootWorkerCode, compressWorkerCode, csoCompressWorkerCode, patchWorkerCode, zipWorkerCode] = await Promise.all([
   bundleWorker('worker.js', zlib, []),
   bundleWorker('eboot-worker.js', zlib, [inlineBlobsPlugin]),
   bundleWorker('compress-worker.js', zlib, [inlineBlobsPlugin]),
   bundleWorker('cso-compress-worker.js', zlib, []),
+  bundleWorker('patch-worker.js', '', []),
+  bundleWorker('zip-worker.js', '', []),
 ]);
 
 // ── 1. Inline CSS (at the __STYLES__ marker) ─────────────────────────────────
@@ -140,6 +143,8 @@ const workerScript = '<script>\n' +
   'const __EBOOT_WORKER = `' + escapeForTemplateLiteral(ebootWorkerCode) + '`;\n' +
   'const __COMPRESS_WORKER = `' + escapeForTemplateLiteral(compressWorkerCode) + '`;\n' +
   'const __CSO_COMPRESS_WORKER = `' + escapeForTemplateLiteral(csoCompressWorkerCode) + '`;\n' +
+  'const __PATCH_WORKER = `' + escapeForTemplateLiteral(patchWorkerCode) + '`;\n' +
+  'const __ZIP_WORKER = `' + escapeForTemplateLiteral(zipWorkerCode) + '`;\n' +
   '</script>';
 
 html = replaceLiteral(html, '<!-- __WORKERS__ -->', workerScript);
@@ -161,6 +166,8 @@ const workerReplacements = [
   ["new Worker('eboot-worker.js')", '__EBOOT_WORKER'],
   ["new Worker('compress-worker.js')", '__COMPRESS_WORKER'],
   ["new Worker('cso-compress-worker.js')", '__CSO_COMPRESS_WORKER'],
+  ["new Worker('patch-worker.js')", '__PATCH_WORKER'],
+  ["new Worker('zip-worker.js')", '__ZIP_WORKER'],
 ];
 
 for (const [original, global] of workerReplacements) {
