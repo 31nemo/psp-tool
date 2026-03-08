@@ -171,9 +171,9 @@
       <div class="tab-panel" id="panel-diagnose">
         <div class="drop-zone" id="diagnoseDropZone">
           <span class="icon">&#128269;</span>
-          <p>Drop an EBOOT.PBP here<br><small>Inspect PBP structure, SFO, PSAR layout</small></p>
+          <p>Drop any file to inspect<br><small>.pbp, .iso, .bin, .cso, .zso, .cue, .ips, .ppf, .bps, .xdelta</small></p>
         </div>
-        <input type="file" id="diagnoseFileInput" accept=".pbp">
+        <input type="file" id="diagnoseFileInput" data-testid="diagnose-file-input">
 
         <div class="file-info" id="diagnoseFileInfo">
           <div class="name" id="diagnoseFileName"></div>

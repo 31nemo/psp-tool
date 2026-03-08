@@ -1,12 +1,13 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// DIAGNOSE TAB — EBOOT.PBP structural inspector
+// DIAGNOSE TAB — General-purpose file inspector
 //
-// Browser port of tools/inspect-eboot.js. Drop an EBOOT.PBP to view its
-// internal structure: PBP header offsets, SFO metadata, PSAR layout variant,
-// PSISOIMG header fields, TOC entries, index table stats, and block hashes.
-//
-// Useful for debugging EBOOTs that fail to boot — compare against known-good
-// Sony PSN EBOOTs to spot structural differences.
+// Drop any file to inspect its structure. Supports:
+// - EBOOT.PBP: PBP header, SFO, PSAR layout, index table, sanity checks
+// - CSO/ZSO: Header, block count, compression ratio, sample decompress
+// - BIN/ISO: Sector size, disc ID, volume ID, title
+// - CUE: Track listing, FILE references
+// - Patches (IPS/PPF/BPS/VCDIFF): Format info, structural details
+// - Unknown: Hex dump of first 64 bytes
 // ══════════════════════════════════════════════════════════════════════════════
 
 const diagnoseDropZone = document.getElementById('diagnoseDropZone');
@@ -36,6 +37,52 @@ diagnoseFileInput.addEventListener('change', () => {
   diagnoseFileInput.value = '';
 });
 
+async function detectDiagnoseFormat(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'cue') return 'cue';
+
+  if (file.size < 5) return 'unknown';
+  const header = await readBytes(file, 0, 16);
+  const magic4 = String.fromCharCode(header[0], header[1], header[2], header[3]);
+
+  // PBP
+  if (magic4 === '\0PBP') return 'pbp';
+  // CSO
+  if (magic4 === 'CISO') return 'cso';
+  // ZSO
+  if (magic4 === 'ZISO') return 'zso';
+  // Patch formats
+  if (header[0] === 0xD6 && header[1] === 0xC3 && header[2] === 0xC4) return 'xdelta';
+  if (magic4 === 'BPS1') return 'bps';
+  const magic5 = magic4 + String.fromCharCode(header[4]);
+  if (magic5 === 'PATCH') return 'ips';
+  if (header[0] === 0x50 && header[1] === 0x50 && header[2] === 0x46) return 'ppf';
+
+  // Raw disc: sync pattern 00 FF FF FF ... FF 00
+  if (header[0] === 0x00 && header[1] === 0xFF && header[2] === 0xFF && header[11] === 0x00) return 'disc';
+
+  // ISO 9660: check PVD at sector 16
+  if (file.size > 16 * 2048 + 6) {
+    const pvd = await readBytes(file, 16 * 2048, 6);
+    if (pvd[0] === 1 && String.fromCharCode(pvd[1], pvd[2], pvd[3], pvd[4], pvd[5]) === 'CD001') return 'disc';
+  }
+
+  return 'unknown';
+}
+
+const FORMAT_LABELS = {
+  pbp:     { cls: 'format-pbp', text: 'PBP' },
+  cso:     { cls: 'format-cso-inspect', text: 'CSO' },
+  zso:     { cls: 'format-zso-inspect', text: 'ZSO' },
+  disc:    { cls: 'format-disc', text: 'DISC' },
+  cue:     { cls: 'format-cue', text: 'CUE' },
+  ips:     { cls: 'format-patch', text: 'IPS' },
+  ppf:     { cls: 'format-patch', text: 'PPF' },
+  bps:     { cls: 'format-patch', text: 'BPS' },
+  xdelta:  { cls: 'format-patch', text: 'VCDIFF' },
+  unknown: { cls: 'format-unknown', text: '???' },
+};
+
 async function handleDiagnoseDrop(fileList) {
   if (diagnoseWorking) return;
   const file = fileList[0];
@@ -51,12 +98,53 @@ async function handleDiagnoseDrop(fileList) {
 
   diagnoseWorking = true;
   diagnoseProgressArea.style.display = 'block';
-  showDiagnoseProgress(0, 'Reading PBP header...');
+  showDiagnoseProgress(0, 'Detecting format...');
 
   try {
-    const result = await inspectEboot(file);
-    diagnoseResults.innerHTML = renderInspectResults(result);
+    const fmt = await detectDiagnoseFormat(file);
+    const label = FORMAT_LABELS[fmt] || FORMAT_LABELS.unknown;
+    diagnoseFileMeta.innerHTML = `${formatSize(file.size)} <span class="format-label ${label.cls}">${label.text}</span>`;
+
+    let html = '';
+    switch (fmt) {
+      case 'pbp': {
+        const result = await inspectEboot(file);
+        html = renderEbootSummary(result) + renderEbootResults(result);
+        break;
+      }
+      case 'cso':
+      case 'zso': {
+        const result = await inspectCsoFile(file, fmt);
+        html = renderCsoResults(result);
+        break;
+      }
+      case 'disc': {
+        const result = await inspectDiscFile(file);
+        html = renderDiscResults(result);
+        break;
+      }
+      case 'cue': {
+        const result = await inspectCueFile(file);
+        html = renderCueResults(result);
+        break;
+      }
+      case 'ips':
+      case 'ppf':
+      case 'bps':
+      case 'xdelta': {
+        const result = await inspectPatchFile(file, fmt);
+        html = renderPatchResults(result);
+        break;
+      }
+      default: {
+        const result = await inspectUnknownFile(file);
+        html = renderUnknownResults(result);
+      }
+    }
+
+    diagnoseResults.innerHTML = html;
     initCollapsibles();
+    initDiagnoseTabs();
     diagnoseStatus.textContent = 'Inspection complete';
   } catch (e) {
     diagnoseStatus.textContent = 'Error: ' + e.message;
@@ -530,6 +618,707 @@ async function inspectEboot(file) {
   return { fileSize: file.size, pbp, sfo, dataPspSha1, psar };
 }
 
+// ── New inspectors ───────────────────────────────────────────────────────────
+
+async function inspectCsoFile(file, fmt) {
+  showDiagnoseProgress(0.2, 'Reading CSO header...');
+  const headerBuf = await readBytes(file, 0, 24);
+  const parsed = parseCsoHeader(headerBuf);
+  const blockSize = parsed.blockSize;
+  const uncompressedSize = parsed.uncompressedSize;
+  const blockCount = Math.ceil(uncompressedSize / blockSize);
+
+  // Read index to compute compression stats
+  showDiagnoseProgress(0.4, 'Reading block index...');
+  const indexSize = (blockCount + 1) * 4;
+  const indexBuf = await readBytes(file, 24, Math.min(indexSize, file.size - 24));
+  const idxDv = new DataView(indexBuf.buffer, indexBuf.byteOffset, indexBuf.byteLength);
+
+  let compressedBlocks = 0, storedBlocks = 0;
+  let totalCompressed = 0;
+  for (let i = 0; i < blockCount && (i + 1) * 4 < indexBuf.length; i++) {
+    const raw0 = idxDv.getUint32(i * 4, true);
+    const raw1 = idxDv.getUint32((i + 1) * 4, true);
+    const isUncompressed = (raw0 >>> 31) !== 0;
+    const off0 = raw0 & 0x7FFFFFFF;
+    const off1 = raw1 & 0x7FFFFFFF;
+    const len = off1 - off0;
+    totalCompressed += len;
+    if (isUncompressed) storedBlocks++;
+    else compressedBlocks++;
+  }
+
+  const ratio = uncompressedSize > 0 ? (file.size / uncompressedSize * 100).toFixed(1) : 'N/A';
+
+  // Sample decompress first block
+  let sampleResult = null;
+  if (blockCount > 0 && typeof inflateRaw !== 'undefined' && fmt === 'cso') {
+    showDiagnoseProgress(0.7, 'Sample decompressing...');
+    const raw0 = idxDv.getUint32(0, true);
+    const raw1 = idxDv.getUint32(4, true);
+    const isUncompressed = (raw0 >>> 31) !== 0;
+    const off0 = raw0 & 0x7FFFFFFF;
+    const off1 = raw1 & 0x7FFFFFFF;
+    const len = off1 - off0;
+    try {
+      const blockData = await readBytes(file, off0, len);
+      if (isUncompressed) {
+        sampleResult = { stored: 'uncompressed', size: len };
+      } else {
+        const inflated = inflateRaw(blockData);
+        sampleResult = { stored: 'compressed', compressedSize: len, decompressedSize: inflated.length, ok: inflated.length === blockSize };
+      }
+    } catch (e) {
+      sampleResult = { error: e.message };
+    }
+  }
+
+  showDiagnoseProgress(1, 'Done');
+  return {
+    format: fmt.toUpperCase(),
+    fileSize: file.size,
+    uncompressedSize,
+    blockSize,
+    blockCount,
+    compressedBlocks,
+    storedBlocks,
+    ratio,
+    sampleResult,
+  };
+}
+
+async function inspectDiscFile(file) {
+  showDiagnoseProgress(0.2, 'Detecting disc format...');
+  const header = await readBytes(file, 0, 16);
+  const isRaw = header[0] === 0x00 && header[1] === 0xFF && header[2] === 0xFF
+             && header[3] === 0xFF && header[11] === 0x00;
+  const sectorSize = isRaw ? 2352 : 2048;
+  const dataOffset = isRaw ? 24 : 0;
+  const sectorCount = Math.floor(file.size / sectorSize);
+
+  let volumeId = '', volumeSize = 0;
+  let discId = null, title = null;
+
+  // Read PVD
+  showDiagnoseProgress(0.4, 'Reading ISO 9660 PVD...');
+  const pvdStart = 16 * sectorSize + dataOffset;
+  if (pvdStart + 2048 <= file.size) {
+    const pvd = await readBytes(file, pvdStart, 2048);
+    if (pvd[0] === 1 && String.fromCharCode(pvd[1], pvd[2], pvd[3], pvd[4], pvd[5]) === 'CD001') {
+      volumeId = new TextDecoder('ascii').decode(pvd.slice(40, 72)).trim();
+      const dvPvd = new DataView(pvd.buffer);
+      volumeSize = dvPvd.getUint32(80, true); // volume space size in blocks
+    }
+  }
+
+  // Auto-detect disc ID and title
+  showDiagnoseProgress(0.6, 'Detecting disc ID...');
+  const detected = await autoDetectDiscId(file);
+  if (detected) {
+    discId = detected.discId;
+    title = detected.title;
+  }
+  if (!title && volumeId) {
+    title = volumeId.replace(/_/g, ' ').replace(/[A-Z]+/g, w => w[0] + w.slice(1).toLowerCase());
+  }
+  if (!title) title = titleFromFilename(file.name);
+
+  showDiagnoseProgress(1, 'Done');
+  return {
+    fileSize: file.size,
+    sectorSize,
+    isRaw,
+    sectorCount,
+    volumeId,
+    volumeSize,
+    discId,
+    title,
+  };
+}
+
+async function inspectCueFile(file) {
+  showDiagnoseProgress(0.3, 'Parsing CUE sheet...');
+  const text = await file.text();
+  const binNames = extractBinNames(text);
+  const tracks = parseCueTracksUI(text);
+  showDiagnoseProgress(1, 'Done');
+  return { fileSize: file.size, text, binNames, tracks };
+}
+
+// BPS varint decoder (matches patch/bps.js:decodeBPSInt)
+function decodeBPSVarInt(data, offset) {
+  let value = 0, shift = 1, pos = offset;
+  while (pos < data.length) {
+    const b = data[pos++];
+    value += (b & 0x7F) * shift;
+    if (b & 0x80) break;
+    shift <<= 7;
+    value += shift;
+  }
+  return { value, newOffset: pos };
+}
+
+// VCDIFF varint decoder (7-bit big-endian, high bit = continuation)
+function decodeVCDIFFInt(data, offset) {
+  let val = 0, pos = offset;
+  while (pos < data.length) {
+    const b = data[pos++];
+    val = val * 128 + (b & 0x7F);
+    if (!(b & 0x80)) break;
+  }
+  return { value: val, newOffset: pos };
+}
+
+async function inspectPatchFile(file, fmt) {
+  showDiagnoseProgress(0.3, 'Reading patch...');
+  const data = new Uint8Array(await file.arrayBuffer());
+  const info = { format: fmt, fileSize: file.size };
+
+  switch (fmt) {
+    case 'ips': {
+      let pos = 5; // skip "PATCH"
+      let records = 0, rleRecords = 0, totalDataBytes = 0;
+      let minOffset = Infinity, maxEnd = 0;
+      let hasTruncation = false;
+      while (pos + 3 <= data.length) {
+        if (data[pos] === 0x45 && data[pos+1] === 0x4F && data[pos+2] === 0x46) {
+          pos += 3;
+          if (pos + 3 <= data.length) hasTruncation = true;
+          break;
+        }
+        const offset = (data[pos] << 16) | (data[pos+1] << 8) | data[pos+2];
+        pos += 3;
+        const size = (data[pos] << 8) | data[pos+1];
+        pos += 2;
+        if (size === 0) {
+          // RLE
+          const count = (data[pos] << 8) | data[pos+1];
+          pos += 3; // 2 count + 1 value
+          rleRecords++;
+          totalDataBytes += count;
+          if (offset < minOffset) minOffset = offset;
+          if (offset + count > maxEnd) maxEnd = offset + count;
+        } else {
+          pos += size;
+          totalDataBytes += size;
+          if (offset < minOffset) minOffset = offset;
+          if (offset + size > maxEnd) maxEnd = offset + size;
+        }
+        records++;
+      }
+      info.records = records;
+      info.rleRecords = rleRecords;
+      info.totalDataBytes = totalDataBytes;
+      info.patchedRange = records > 0 ? { start: minOffset, end: maxEnd } : null;
+      info.hasTruncation = hasTruncation;
+      break;
+    }
+    case 'ppf': {
+      info.version = data[5] - 0x30;
+      info.encoding = data[4] === 0 ? 'BIN' : 'GI';
+      if (info.version >= 2 && data.length >= 56) {
+        info.description = new TextDecoder('ascii').decode(data.slice(6, 56)).replace(/\0+$/, '');
+      }
+
+      // Count records and detect block check / undo
+      let recordStart, recordEnd, offsetSize;
+      if (info.version === 3) {
+        info.imageType = data[56] === 1 ? 'GI' : 'BIN';
+        info.hasBlockCheck = data[57] === 1;
+        info.hasUndo = data[58] === 1;
+        recordStart = info.hasBlockCheck ? 1084 : 60;
+        recordEnd = data.length;
+        offsetSize = 8;
+      } else if (info.version === 2) {
+        // v2: possible block check trailer (last 1028 bytes)
+        info.hasBlockCheck = data.length > 56 + 1028;
+        recordStart = 56;
+        recordEnd = info.hasBlockCheck ? data.length - 1028 : data.length;
+        offsetSize = 4;
+        info.hasUndo = false;
+      } else {
+        recordStart = 56;
+        recordEnd = data.length;
+        offsetSize = 4;
+        info.hasBlockCheck = false;
+        info.hasUndo = false;
+      }
+
+      let records = 0, totalDataBytes = 0;
+      let pos = recordStart;
+      const undoMul = info.hasUndo ? 2 : 1;
+      while (pos + offsetSize + 1 <= recordEnd) {
+        pos += offsetSize; // skip offset
+        const len = data[pos]; pos += 1;
+        if (pos + len * undoMul > recordEnd) break;
+        totalDataBytes += len;
+        pos += len * undoMul;
+        records++;
+      }
+      info.records = records;
+      info.totalDataBytes = totalDataBytes;
+      break;
+    }
+    case 'bps': {
+      let pos = 4; // skip "BPS1"
+      const src = decodeBPSVarInt(data, pos); pos = src.newOffset;
+      const tgt = decodeBPSVarInt(data, pos); pos = tgt.newOffset;
+      const meta = decodeBPSVarInt(data, pos); pos = meta.newOffset;
+      info.sourceSize = src.value;
+      info.targetSize = tgt.value;
+      info.metadataSize = meta.value;
+      if (meta.value > 0 && pos + meta.value <= data.length) {
+        const raw = new TextDecoder('utf-8').decode(data.slice(pos, pos + meta.value));
+        info.metadata = raw.replace(/\0+$/, '');
+      }
+      pos += meta.value;
+
+      // Count commands by type
+      const footerStart = data.length - 12;
+      let sourceRead = 0, targetRead = 0, sourceCopy = 0, targetCopy = 0, commands = 0;
+      while (pos < footerStart) {
+        const cmd = decodeBPSVarInt(data, pos); pos = cmd.newOffset;
+        const action = cmd.value & 0x03;
+        const length = (cmd.value >> 2) + 1;
+        if (action === 0) sourceRead++;
+        else if (action === 1) { targetRead++; pos += length; }
+        else if (action === 2) { sourceCopy++; const d = decodeBPSVarInt(data, pos); pos = d.newOffset; }
+        else if (action === 3) { targetCopy++; const d = decodeBPSVarInt(data, pos); pos = d.newOffset; }
+        commands++;
+      }
+      info.commands = commands;
+      info.commandBreakdown = { sourceRead, targetRead, sourceCopy, targetCopy };
+
+      // Footer CRCs
+      if (data.length >= 12) {
+        const dv = new DataView(data.buffer, data.byteOffset + footerStart, 12);
+        info.sourceCRC = dv.getUint32(0, true);
+        info.targetCRC = dv.getUint32(4, true);
+        info.patchCRC = dv.getUint32(8, true);
+      }
+      break;
+    }
+    case 'xdelta': {
+      // VCDIFF header
+      info.version = data[3];
+      info.versionLabel = data[3] === 0x00 ? 'Standard (RFC 3284)' : data[3] === 0x53 ? 'xdelta3 (0x53)' : hex(data[3]);
+      const hdrIndicator = data[4];
+      info.headerIndicator = hdrIndicator;
+      let pos = 5;
+
+      // Secondary compression
+      if (hdrIndicator & 0x01) {
+        const compId = data[pos++];
+        const compNames = { 0: 'none', 1: 'DJW', 2: 'LZMA', 16: 'FGK' };
+        info.secondaryCompression = compNames[compId] || `ID=${compId}`;
+      } else {
+        info.secondaryCompression = 'none';
+      }
+
+      // Custom code table
+      if (hdrIndicator & 0x02) {
+        const ct = decodeVCDIFFInt(data, pos); pos = ct.newOffset + ct.value;
+        info.hasCustomCodeTable = true;
+      } else {
+        info.hasCustomCodeTable = false;
+      }
+
+      // App header (xdelta3 extension)
+      if (hdrIndicator & 0x04) {
+        const ah = decodeVCDIFFInt(data, pos);
+        pos = ah.newOffset;
+        if (ah.value > 0 && pos + ah.value <= data.length) {
+          info.appHeader = new TextDecoder('utf-8').decode(data.slice(pos, pos + ah.value)).replace(/\0+$/, '');
+        }
+        pos += ah.value;
+      }
+
+      // Walk windows
+      let windows = 0, totalTargetSize = 0;
+      let minWindowSize = Infinity, maxWindowSize = 0;
+      let sourceWindows = 0;
+      while (pos < data.length) {
+        const winIndicator = data[pos++];
+        const hasSource = !!(winIndicator & 0x01);
+        const hasAdler32 = !!(winIndicator & 0x04);
+        if (hasSource || (winIndicator & 0x02)) {
+          const srcLen = decodeVCDIFFInt(data, pos); pos = srcLen.newOffset;
+          const srcOff = decodeVCDIFFInt(data, pos); pos = srcOff.newOffset;
+          if (hasSource) sourceWindows++;
+        }
+        const deltaLen = decodeVCDIFFInt(data, pos); pos = deltaLen.newOffset;
+        const deltaEnd = pos + deltaLen.value;
+        // Read target window length (first varint inside delta)
+        const targetWindowLen = decodeVCDIFFInt(data, pos);
+        totalTargetSize += targetWindowLen.value;
+        if (targetWindowLen.value < minWindowSize) minWindowSize = targetWindowLen.value;
+        if (targetWindowLen.value > maxWindowSize) maxWindowSize = targetWindowLen.value;
+        pos = deltaEnd;
+        windows++;
+      }
+      info.windows = windows;
+      info.sourceWindows = sourceWindows;
+      info.totalTargetSize = totalTargetSize;
+      if (windows > 0) {
+        info.minWindowSize = minWindowSize;
+        info.maxWindowSize = maxWindowSize;
+      }
+      break;
+    }
+  }
+
+  showDiagnoseProgress(1, 'Done');
+  return info;
+}
+
+async function inspectUnknownFile(file) {
+  showDiagnoseProgress(0.5, 'Reading file...');
+  const dumpLen = Math.min(file.size, 64);
+  const bytes = await readBytes(file, 0, dumpLen);
+  showDiagnoseProgress(1, 'Done');
+  return { fileSize: file.size, headerBytes: bytes };
+}
+
+// ── Hex dump helper ──────────────────────────────────────────────────────────
+
+function hexDump(bytes) {
+  let lines = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const addr = i.toString(16).padStart(4, '0');
+    const hexParts = [];
+    let ascii = '';
+    for (let j = 0; j < 16; j++) {
+      if (i + j < bytes.length) {
+        hexParts.push(bytes[i + j].toString(16).padStart(2, '0'));
+        const c = bytes[i + j];
+        ascii += (c >= 0x20 && c <= 0x7E) ? String.fromCharCode(c) : '.';
+      } else {
+        hexParts.push('  ');
+        ascii += ' ';
+      }
+    }
+    lines.push(`${addr}  ${hexParts.slice(0,8).join(' ')}  ${hexParts.slice(8).join(' ')}  |${ascii}|`);
+  }
+  return lines.join('\n');
+}
+
+// ── Render new inspector results ─────────────────────────────────────────────
+
+function renderCsoResults(r) {
+  let summary = `<div class="diagnose-summary">${esc(r.format)} compressed disc image &mdash; ${formatSize(r.uncompressedSize)} uncompressed &mdash; ${r.ratio}% ratio</div>`;
+
+  let body = '<table>';
+  body += `<tr><td>Format</td><td>${esc(r.format)}</td></tr>`;
+  body += `<tr><td>File size</td><td>${formatSize(r.fileSize)}</td></tr>`;
+  body += `<tr><td>Uncompressed size</td><td>${formatSize(r.uncompressedSize)}</td></tr>`;
+  body += `<tr><td>Block size</td><td>${formatSize(r.blockSize)} (<span class="hex">${hex(r.blockSize)}</span>)</td></tr>`;
+  body += `<tr><td>Block count</td><td>${r.blockCount.toLocaleString()}</td></tr>`;
+  body += `<tr><td>Compressed blocks</td><td>${r.compressedBlocks.toLocaleString()}</td></tr>`;
+  body += `<tr><td>Stored blocks</td><td>${r.storedBlocks.toLocaleString()}</td></tr>`;
+  body += `<tr><td>Compression ratio</td><td>${r.ratio}%</td></tr>`;
+  body += '</table>';
+
+  if (r.sampleResult) {
+    body += '<div style="margin-top:0.4rem;color:#999;font-size:0.75rem">Sample decompress (block 0)</div><table>';
+    const s = r.sampleResult;
+    if (s.error) {
+      body += `<tr><td>Result</td><td><span class="check-fail">FAIL</span> ${esc(s.error)}</td></tr>`;
+    } else if (s.stored === 'uncompressed') {
+      body += `<tr><td>Result</td><td>uncompressed, ${s.size} bytes</td></tr>`;
+    } else {
+      body += `<tr><td>Result</td><td>compressed ${s.compressedSize} &rarr; ${s.decompressedSize}${s.ok ? '' : ' <span class="check-fail">WRONG SIZE</span>'}</td></tr>`;
+    }
+    body += '</table>';
+  }
+
+  return summary + collapsibleSection('CSO Header', body, true);
+}
+
+function renderDiscResults(r) {
+  const parts = ['Disc image'];
+  if (r.discId) parts.push(r.discId);
+  if (r.title) parts.push(r.title);
+  parts.push(formatSize(r.fileSize));
+  let summary = `<div class="diagnose-summary">${parts.map(esc).join(' &mdash; ')}</div>`;
+
+  let body = '<table>';
+  body += `<tr><td>File size</td><td>${formatSize(r.fileSize)}</td></tr>`;
+  body += `<tr><td>Sector size</td><td>${r.sectorSize} bytes (${r.isRaw ? 'raw/2352' : 'ISO/2048'})</td></tr>`;
+  body += `<tr><td>Sector count</td><td>${r.sectorCount.toLocaleString()}</td></tr>`;
+  if (r.volumeId) body += `<tr><td>Volume ID</td><td>"${esc(r.volumeId)}"</td></tr>`;
+  if (r.volumeSize) body += `<tr><td>Volume size</td><td>${r.volumeSize.toLocaleString()} blocks</td></tr>`;
+  if (r.discId) body += `<tr><td>Disc ID</td><td>${esc(r.discId)}</td></tr>`;
+  if (r.title) body += `<tr><td>Title</td><td>"${esc(r.title)}"</td></tr>`;
+  body += '</table>';
+
+  return summary + collapsibleSection('Disc Info', body, true);
+}
+
+function renderCueResults(r) {
+  let summary = `<div class="diagnose-summary">CUE sheet &mdash; ${r.tracks.length} track${r.tracks.length !== 1 ? 's' : ''} &mdash; ${r.binNames.length} file${r.binNames.length !== 1 ? 's' : ''}</div>`;
+
+  let body = '';
+  if (r.binNames.length > 0) {
+    body += '<div style="color:#999;font-size:0.75rem;margin-bottom:0.3rem">Referenced files</div><table>';
+    for (const name of r.binNames) {
+      body += `<tr><td>${esc(name)}</td></tr>`;
+    }
+    body += '</table>';
+  }
+
+  if (r.tracks.length > 0) {
+    body += '<div style="color:#999;font-size:0.75rem;margin-top:0.4rem;margin-bottom:0.3rem">Tracks</div><table>';
+    for (const t of r.tracks) {
+      const idx01 = t.indexes.find(i => i.id === 1);
+      const msf = idx01 ? `${String(idx01.msf[0]).padStart(2,'0')}:${String(idx01.msf[1]).padStart(2,'0')}:${String(idx01.msf[2]).padStart(2,'0')}` : '';
+      body += `<tr><td>Track ${t.number}</td><td>${esc(t.type)}</td><td>${t.sectorSize} bytes/sector</td><td>${msf}</td></tr>`;
+      if (t.pregap > 0) {
+        body += `<tr><td></td><td colspan="3" style="color:#999">pregap: ${t.pregap} frames</td></tr>`;
+      }
+    }
+    body += '</table>';
+  }
+
+  return summary + collapsibleSection('CUE Sheet', body, true);
+}
+
+function renderPatchResults(r) {
+  const fmtNames = { ips: 'IPS', ppf: 'PPF', bps: 'BPS', xdelta: 'VCDIFF (xdelta)' };
+  const name = fmtNames[r.format] || r.format;
+
+  // Summary line
+  let summaryParts = [name + ' patch', formatSize(r.fileSize)];
+  if (r.records != null) summaryParts.push(r.records + ' record' + (r.records !== 1 ? 's' : ''));
+  if (r.commands != null) summaryParts.push(r.commands + ' command' + (r.commands !== 1 ? 's' : ''));
+  if (r.windows != null) summaryParts.push(r.windows + ' window' + (r.windows !== 1 ? 's' : ''));
+  if (r.version != null && r.format === 'ppf') summaryParts.push('v' + r.version);
+  if (r.totalTargetSize != null) summaryParts.push(formatSize(r.totalTargetSize) + ' output');
+  let summary = `<div class="diagnose-summary">${summaryParts.map(esc).join(' &mdash; ')}</div>`;
+
+  let body = '<table>';
+  body += `<tr><td>Format</td><td>${esc(name)}</td></tr>`;
+  body += `<tr><td>File size</td><td>${formatSize(r.fileSize)}</td></tr>`;
+
+  // ── IPS-specific ──
+  if (r.format === 'ips') {
+    body += `<tr><td>Records</td><td>${r.records}${r.rleRecords ? ` (${r.rleRecords} RLE)` : ''}</td></tr>`;
+    body += `<tr><td>Total data written</td><td>${formatSize(r.totalDataBytes)}</td></tr>`;
+    if (r.patchedRange) {
+      body += `<tr><td>Patched range</td><td><span class="hex">${hex(r.patchedRange.start)}</span> &ndash; <span class="hex">${hex(r.patchedRange.end)}</span> (${formatSize(r.patchedRange.end - r.patchedRange.start)})</td></tr>`;
+    }
+    if (r.hasTruncation) body += `<tr><td>Truncation</td><td>yes (output will be truncated)</td></tr>`;
+  }
+
+  // ── PPF-specific ──
+  if (r.format === 'ppf') {
+    body += `<tr><td>Version</td><td>${r.version}</td></tr>`;
+    body += `<tr><td>Encoding</td><td>${esc(r.encoding)}</td></tr>`;
+    if (r.description) body += `<tr><td>Description</td><td>"${esc(r.description)}"</td></tr>`;
+    if (r.imageType) body += `<tr><td>Image type</td><td>${esc(r.imageType)}</td></tr>`;
+    body += `<tr><td>Block check</td><td>${r.hasBlockCheck ? 'yes' : 'no'}</td></tr>`;
+    if (r.hasUndo != null) body += `<tr><td>Undo data</td><td>${r.hasUndo ? 'yes' : 'no'}</td></tr>`;
+    body += `<tr><td>Records</td><td>${r.records}</td></tr>`;
+    body += `<tr><td>Total data written</td><td>${formatSize(r.totalDataBytes)}</td></tr>`;
+  }
+
+  // ── BPS-specific ──
+  if (r.format === 'bps') {
+    body += `<tr><td>Source size</td><td>${formatSize(r.sourceSize)}</td></tr>`;
+    body += `<tr><td>Target size</td><td>${formatSize(r.targetSize)}</td></tr>`;
+    if (r.metadataSize > 0) {
+      body += `<tr><td>Metadata</td><td>${r.metadata ? '"' + esc(r.metadata) + '"' : formatSize(r.metadataSize)}</td></tr>`;
+    }
+    body += `<tr><td>Commands</td><td>${r.commands}</td></tr>`;
+    if (r.commandBreakdown) {
+      const cb = r.commandBreakdown;
+      body += `<tr><td></td><td style="color:#999">SourceRead: ${cb.sourceRead}, TargetRead: ${cb.targetRead}, SourceCopy: ${cb.sourceCopy}, TargetCopy: ${cb.targetCopy}</td></tr>`;
+    }
+    if (r.sourceCRC != null) {
+      body += `<tr><td>Source CRC32</td><td><span class="hex">${hex(r.sourceCRC)}</span></td></tr>`;
+      body += `<tr><td>Target CRC32</td><td><span class="hex">${hex(r.targetCRC)}</span></td></tr>`;
+      body += `<tr><td>Patch CRC32</td><td><span class="hex">${hex(r.patchCRC)}</span></td></tr>`;
+    }
+  }
+
+  // ── VCDIFF-specific ──
+  if (r.format === 'xdelta') {
+    body += `<tr><td>Version</td><td>${esc(r.versionLabel)}</td></tr>`;
+    body += `<tr><td>Secondary compression</td><td>${esc(r.secondaryCompression)}</td></tr>`;
+    if (r.hasCustomCodeTable) body += `<tr><td>Custom code table</td><td>yes</td></tr>`;
+    if (r.appHeader) body += `<tr><td>App header</td><td>"${esc(r.appHeader)}"</td></tr>`;
+    body += `<tr><td>Windows</td><td>${r.windows}${r.sourceWindows ? ` (${r.sourceWindows} with source)` : ''}</td></tr>`;
+    body += `<tr><td>Total output</td><td>${formatSize(r.totalTargetSize)}</td></tr>`;
+    if (r.windows > 1) {
+      body += `<tr><td>Window sizes</td><td>min ${formatSize(r.minWindowSize)}, max ${formatSize(r.maxWindowSize)}</td></tr>`;
+    }
+  }
+
+  body += '</table>';
+  return summary + collapsibleSection('Patch Info', body, true);
+}
+
+function renderUnknownResults(r) {
+  let summary = `<div class="diagnose-summary">Unknown format &mdash; ${formatSize(r.fileSize)}</div>`;
+  let body = `<div class="hex-dump">${esc(hexDump(r.headerBytes))}</div>`;
+  return summary + collapsibleSection('Hex Dump (first 64 bytes)', body, true);
+}
+
+// ── Render EBOOT results (refactored with summary + sub-tabs) ────────────────
+
+function renderEbootSummary(result) {
+  const { sfo, psar } = result;
+  const parts = ['EBOOT.PBP'];
+  const titleEntry = sfo.entries && sfo.entries.find(e => e.key === 'TITLE');
+  const discIdEntry = sfo.entries && sfo.entries.find(e => e.key === 'DISC_ID');
+  if (discIdEntry) parts.push(String(discIdEntry.value));
+  if (titleEntry) parts.push(String(titleEntry.value));
+  parts.push(formatSize(result.fileSize));
+  if (psar.discCount > 1) parts.push(psar.discCount + ' discs');
+  return `<div class="diagnose-summary">${parts.map(esc).join(' &mdash; ')}</div>`;
+}
+
+function renderEbootResults(result) {
+  const { pbp, sfo, psar } = result;
+
+  // Build sub-tab content for PBP Header
+  let pbpBody = '<table>';
+  pbpBody += `<tr><td>Magic</td><td>${esc(pbp.magic)}</td></tr>`;
+  pbpBody += `<tr><td>Version</td><td>${esc(pbp.version)}</td></tr>`;
+  pbpBody += `<tr><td>File size</td><td>${formatSize(result.fileSize)}</td></tr>`;
+  pbpBody += '</table><table style="margin-top:0.4rem">';
+  for (const s of pbp.sections) {
+    const status = s.empty ? '<span style="color:#666">(empty)</span>' : formatSize(s.size);
+    pbpBody += `<tr><td>${esc(s.name)}</td><td><span class="hex">${hex(s.offset)}</span></td><td>${status}</td></tr>`;
+  }
+  pbpBody += '</table>';
+  if (result.dataPspSha1) {
+    pbpBody += `<div style="margin-top:0.3rem;font-size:0.75rem;color:#888">DATA.PSP SHA-1: <span class="hex">${esc(result.dataPspSha1)}</span></div>`;
+  }
+
+  // SFO content
+  let sfoBody = '';
+  if (sfo.error) {
+    sfoBody = `<span class="check-fail">ERROR: ${esc(sfo.error)}</span>`;
+  } else {
+    sfoBody = '<table>';
+    for (const e of sfo.entries) {
+      const val = typeof e.value === 'number'
+        ? `${e.value} (<span class="hex">${hex(e.value)}</span>)`
+        : `"${esc(e.value)}"`;
+      sfoBody += `<tr><td>${esc(e.key)}</td><td style="color:#888">[${esc(e.type)}]</td><td>${val}</td></tr>`;
+    }
+    sfoBody += '</table>';
+  }
+
+  // PSAR content
+  let psarBody = renderPsarBody(psar);
+
+  // Build sub-tabs
+  let html = '<div class="diagnose-tabs" data-diagnose-tabs>';
+  html += '<button class="active" data-dtab="header">Header</button>';
+  html += '<button data-dtab="sfo">SFO</button>';
+  html += '<button data-dtab="psar">PSAR</button>';
+  html += '</div>';
+  html += `<div class="diagnose-tab-panel active" data-dtab-panel="header">${collapsibleSection('PBP Header', pbpBody, true)}</div>`;
+  html += `<div class="diagnose-tab-panel" data-dtab-panel="sfo">${collapsibleSection('PARAM.SFO', sfoBody, true)}</div>`;
+  html += `<div class="diagnose-tab-panel" data-dtab-panel="psar">${collapsibleSection('DATA.PSAR', psarBody, true)}</div>`;
+
+  return html;
+}
+
+function renderPsarBody(psar) {
+  let psarBody = '<table>';
+  psarBody += `<tr><td>Type</td><td>${esc(psar.type)}</td></tr>`;
+  psarBody += `<tr><td>Discs</td><td>${psar.discCount}</td></tr>`;
+  if (psar.discOffsets) {
+    psarBody += `<tr><td>Offsets</td><td>${psar.discOffsets.map(hex).join(', ')}</td></tr>`;
+  }
+  psarBody += '</table>';
+
+  for (const disc of (psar.discs || [])) {
+    psarBody += `<div class="disc-separator">${esc(disc.label)}</div>`;
+    if (disc.error) {
+      psarBody += `<span class="check-fail">ERROR: ${esc(disc.error)}</span>`;
+      continue;
+    }
+
+    psarBody += '<table>';
+    psarBody += `<tr><td>Variant</td><td>${esc(disc.variant)}</td></tr>`;
+    psarBody += `<tr><td>p1_offset</td><td><span class="hex">${hex(disc.p1_offset)}</span></td></tr>`;
+    psarBody += `<tr><td>p2_offset</td><td><span class="hex">${hex(disc.p2_offset)}</span></td></tr>`;
+    if (disc.discIdAt400) {
+      psarBody += `<tr><td>Disc ID</td><td>"${esc(disc.discIdAt400)}"</td></tr>`;
+    }
+    psarBody += `<tr><td>Reserved</td><td>${disc.reservedAreaClean ? '<span class="check-pass">clean</span>' : `<span class="check-warn">${disc.reservedNonZeroBytes} non-zero bytes</span>`}</td></tr>`;
+    psarBody += `<tr><td>Title</td><td>"${esc(disc.title)}"</td></tr>`;
+    psarBody += '</table>';
+
+    if (disc.toc.entryCount > 0) {
+      psarBody += `<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">TOC at +${hex(disc.tocOffset)}: ${disc.toc.entryCount} entries</div>`;
+      psarBody += '<table>';
+      for (const t of disc.toc.entries) {
+        psarBody += `<tr><td>${esc(t.pointLabel)}</td><td>${esc(t.type)}</td><td>P=${esc(t.pmsf)}</td></tr>`;
+      }
+      psarBody += '</table>';
+    }
+
+    const idx = disc.indexTable;
+    psarBody += `<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">Index at +${hex(disc.indexOffset)}: ${idx.entryCount} blocks</div>`;
+    if (idx.entryCount > 0) {
+      psarBody += '<table>';
+      psarBody += `<tr><td>First</td><td>offset=<span class="hex">${hex(idx.firstEntry.offset)}</span> len=${idx.firstEntry.length}</td></tr>`;
+      psarBody += `<tr><td>Last</td><td>offset=<span class="hex">${hex(idx.lastEntry.offset)}</span> len=${idx.lastEntry.length}</td></tr>`;
+      psarBody += `<tr><td>Block sizes</td><td>min=${idx.minBlockSize} max=${idx.maxBlockSize} (limit=<span class="hex">${hex(ISO_BLOCK_SIZE)}</span>)</td></tr>`;
+      psarBody += `<tr><td>Compressed</td><td>${formatSize(idx.compressedTotal)}</td></tr>`;
+      psarBody += `<tr><td>Uncompressed</td><td>${formatSize(idx.uncompressedTotal)}</td></tr>`;
+      psarBody += `<tr><td>Ratio</td><td>${idx.ratio}</td></tr>`;
+      psarBody += `<tr><td>Continuity</td><td>${idx.gaps === 0 && idx.overlaps === 0 ? '<span class="check-pass">contiguous</span>' : `<span class="check-warn">${idx.gaps} gaps, ${idx.overlaps} overlaps</span>`}</td></tr>`;
+      psarBody += `<tr><td>Block hashes</td><td>${idx.hashedEntries}/${idx.entryCount}</td></tr>`;
+      psarBody += '</table>';
+    }
+
+    if (disc.btypes) {
+      const bt = disc.btypes;
+      const total = bt.fixed + bt.dynamic + bt.stored + bt.raw;
+      if (total > 0) {
+        psarBody += '<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">Compression BTYPE</div><table>';
+        psarBody += `<tr><td>Dynamic Huffman</td><td>${bt.dynamic}</td></tr>`;
+        psarBody += `<tr><td>Fixed Huffman</td><td>${bt.fixed}</td></tr>`;
+        psarBody += `<tr><td>Stored (deflate)</td><td>${bt.stored}</td></tr>`;
+        psarBody += `<tr><td>Uncompressed (raw)</td><td>${bt.raw}</td></tr>`;
+        psarBody += '</table>';
+      }
+    }
+
+    if (disc.startdatOffset != null) {
+      psarBody += `<div style="margin-top:0.3rem"><span style="color:#999;font-size:0.75rem">STARTDAT at +${hex(disc.startdatOffset)}</span> magic="${esc(disc.startdatMagic || 'N/A')}"</div>`;
+    }
+
+    if (disc.samples.length > 0) {
+      psarBody += '<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">Sample decompress</div><table>';
+      for (const s of disc.samples) {
+        if (s.error) {
+          psarBody += `<tr><td>Block ${s.block}</td><td><span class="check-fail">FAIL</span> ${esc(s.error)}</td></tr>`;
+        } else {
+          const sizeOk = s.ok !== false;
+          psarBody += `<tr><td>Block ${s.block}</td><td>${esc(s.stored)} ${s.compressedSize} &rarr; ${s.decompressedSize}${sizeOk ? '' : ' <span class="check-fail">WRONG SIZE</span>'}</td></tr>`;
+        }
+      }
+      psarBody += '</table>';
+    }
+
+    const c = disc.sanityChecks;
+    psarBody += '<div style="margin-top:0.4rem;color:#999;font-size:0.75rem">Sanity checks</div><table>';
+    psarBody += `<tr><td>p1</td><td>${badge(c.p1_matches, c.p1_matches ? 'OK' : `got ${hex(disc.p1_offset)}, expected ${hex(c.p1_compressed)} or ${hex(c.p1_uncompressed)}`)}</td></tr>`;
+    psarBody += `<tr><td>p2</td><td>${badge(c.p2_matches, c.p2_matches ? '0' : `got ${hex(disc.p2_offset)}`)}</td></tr>`;
+    psarBody += `<tr><td>First idx</td><td>${badge(c.firstIndexOffsetZero, 'offset == 0')}</td></tr>`;
+    psarBody += `<tr><td>Block range</td><td>${badge(c.allBlocksInRange, 'all <= 0x9300')}</td></tr>`;
+    psarBody += '</table>';
+  }
+
+  return psarBody;
+}
+
 // ── Render inspect results as HTML ───────────────────────────────────────────
 
 function esc(s) {
@@ -550,142 +1339,7 @@ function collapsibleSection(title, bodyHTML, startOpen) {
   </div>`;
 }
 
-function renderInspectResults(result) {
-  const { pbp, sfo, psar } = result;
-  let html = '';
-
-  // PBP Header
-  let pbpBody = '<table>';
-  pbpBody += `<tr><td>Magic</td><td>${esc(pbp.magic)}</td></tr>`;
-  pbpBody += `<tr><td>Version</td><td>${esc(pbp.version)}</td></tr>`;
-  pbpBody += `<tr><td>File size</td><td>${formatSize(result.fileSize)}</td></tr>`;
-  pbpBody += '</table><table style="margin-top:0.4rem">';
-  for (const s of pbp.sections) {
-    const status = s.empty ? '<span style="color:#666">(empty)</span>' : formatSize(s.size);
-    pbpBody += `<tr><td>${esc(s.name)}</td><td><span class="hex">${hex(s.offset)}</span></td><td>${status}</td></tr>`;
-  }
-  pbpBody += '</table>';
-  if (result.dataPspSha1) {
-    pbpBody += `<div style="margin-top:0.3rem;font-size:0.75rem;color:#888">DATA.PSP SHA-1: <span class="hex">${esc(result.dataPspSha1)}</span></div>`;
-  }
-  html += collapsibleSection('PBP Header', pbpBody, true);
-
-  // PARAM.SFO
-  let sfoBody = '';
-  if (sfo.error) {
-    sfoBody = `<span class="check-fail">ERROR: ${esc(sfo.error)}</span>`;
-  } else {
-    sfoBody = '<table>';
-    for (const e of sfo.entries) {
-      const val = typeof e.value === 'number'
-        ? `${e.value} (<span class="hex">${hex(e.value)}</span>)`
-        : `"${esc(e.value)}"`;
-      sfoBody += `<tr><td>${esc(e.key)}</td><td style="color:#888">[${esc(e.type)}]</td><td>${val}</td></tr>`;
-    }
-    sfoBody += '</table>';
-  }
-  html += collapsibleSection('PARAM.SFO', sfoBody, true);
-
-  // DATA.PSAR
-  let psarBody = `<table>`;
-  psarBody += `<tr><td>Type</td><td>${esc(psar.type)}</td></tr>`;
-  psarBody += `<tr><td>Discs</td><td>${psar.discCount}</td></tr>`;
-  if (psar.discOffsets) {
-    psarBody += `<tr><td>Offsets</td><td>${psar.discOffsets.map(hex).join(', ')}</td></tr>`;
-  }
-  psarBody += '</table>';
-
-  for (const disc of psar.discs) {
-    psarBody += `<div class="disc-separator">${esc(disc.label)}</div>`;
-    if (disc.error) {
-      psarBody += `<span class="check-fail">ERROR: ${esc(disc.error)}</span>`;
-      continue;
-    }
-
-    psarBody += '<table>';
-    psarBody += `<tr><td>Variant</td><td>${esc(disc.variant)}</td></tr>`;
-    psarBody += `<tr><td>p1_offset</td><td><span class="hex">${hex(disc.p1_offset)}</span></td></tr>`;
-    psarBody += `<tr><td>p2_offset</td><td><span class="hex">${hex(disc.p2_offset)}</span></td></tr>`;
-    if (disc.discIdAt400) {
-      psarBody += `<tr><td>Disc ID</td><td>"${esc(disc.discIdAt400)}"</td></tr>`;
-    }
-    psarBody += `<tr><td>Reserved</td><td>${disc.reservedAreaClean ? '<span class="check-pass">clean</span>' : `<span class="check-warn">${disc.reservedNonZeroBytes} non-zero bytes</span>`}</td></tr>`;
-    psarBody += `<tr><td>Title</td><td>"${esc(disc.title)}"</td></tr>`;
-    psarBody += '</table>';
-
-    // TOC
-    if (disc.toc.entryCount > 0) {
-      psarBody += `<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">TOC at +${hex(disc.tocOffset)}: ${disc.toc.entryCount} entries</div>`;
-      psarBody += '<table>';
-      for (const t of disc.toc.entries) {
-        psarBody += `<tr><td>${esc(t.pointLabel)}</td><td>${esc(t.type)}</td><td>P=${esc(t.pmsf)}</td></tr>`;
-      }
-      psarBody += '</table>';
-    }
-
-    // Index table
-    const idx = disc.indexTable;
-    psarBody += `<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">Index at +${hex(disc.indexOffset)}: ${idx.entryCount} blocks</div>`;
-    if (idx.entryCount > 0) {
-      psarBody += '<table>';
-      psarBody += `<tr><td>First</td><td>offset=<span class="hex">${hex(idx.firstEntry.offset)}</span> len=${idx.firstEntry.length}</td></tr>`;
-      psarBody += `<tr><td>Last</td><td>offset=<span class="hex">${hex(idx.lastEntry.offset)}</span> len=${idx.lastEntry.length}</td></tr>`;
-      psarBody += `<tr><td>Block sizes</td><td>min=${idx.minBlockSize} max=${idx.maxBlockSize} (limit=<span class="hex">${hex(ISO_BLOCK_SIZE)}</span>)</td></tr>`;
-      psarBody += `<tr><td>Compressed</td><td>${formatSize(idx.compressedTotal)}</td></tr>`;
-      psarBody += `<tr><td>Uncompressed</td><td>${formatSize(idx.uncompressedTotal)}</td></tr>`;
-      psarBody += `<tr><td>Ratio</td><td>${idx.ratio}</td></tr>`;
-      psarBody += `<tr><td>Continuity</td><td>${idx.gaps === 0 && idx.overlaps === 0 ? '<span class="check-pass">contiguous</span>' : `<span class="check-warn">${idx.gaps} gaps, ${idx.overlaps} overlaps</span>`}</td></tr>`;
-      psarBody += `<tr><td>Block hashes</td><td>${idx.hashedEntries}/${idx.entryCount}</td></tr>`;
-      psarBody += '</table>';
-    }
-
-    // BTYPE breakdown
-    if (disc.btypes) {
-      const bt = disc.btypes;
-      const total = bt.fixed + bt.dynamic + bt.stored + bt.raw;
-      if (total > 0) {
-        psarBody += '<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">Compression BTYPE</div><table>';
-        psarBody += `<tr><td>Dynamic Huffman</td><td>${bt.dynamic}</td></tr>`;
-        psarBody += `<tr><td>Fixed Huffman</td><td>${bt.fixed}</td></tr>`;
-        psarBody += `<tr><td>Stored (deflate)</td><td>${bt.stored}</td></tr>`;
-        psarBody += `<tr><td>Uncompressed (raw)</td><td>${bt.raw}</td></tr>`;
-        psarBody += '</table>';
-      }
-    }
-
-    // STARTDAT
-    if (disc.startdatOffset != null) {
-      psarBody += `<div style="margin-top:0.3rem"><span style="color:#999;font-size:0.75rem">STARTDAT at +${hex(disc.startdatOffset)}</span> magic="${esc(disc.startdatMagic || 'N/A')}"</div>`;
-    }
-
-    // Sample decompress
-    if (disc.samples.length > 0) {
-      psarBody += '<div style="margin-top:0.3rem;color:#999;font-size:0.75rem">Sample decompress</div><table>';
-      for (const s of disc.samples) {
-        if (s.error) {
-          psarBody += `<tr><td>Block ${s.block}</td><td><span class="check-fail">FAIL</span> ${esc(s.error)}</td></tr>`;
-        } else {
-          const sizeOk = s.ok !== false;
-          psarBody += `<tr><td>Block ${s.block}</td><td>${esc(s.stored)} ${s.compressedSize} &rarr; ${s.decompressedSize}${sizeOk ? '' : ' <span class="check-fail">WRONG SIZE</span>'}</td></tr>`;
-        }
-      }
-      psarBody += '</table>';
-    }
-
-    // Sanity checks
-    const c = disc.sanityChecks;
-    psarBody += '<div style="margin-top:0.4rem;color:#999;font-size:0.75rem">Sanity checks</div><table>';
-    psarBody += `<tr><td>p1</td><td>${badge(c.p1_matches, c.p1_matches ? 'OK' : `got ${hex(disc.p1_offset)}, expected ${hex(c.p1_compressed)} or ${hex(c.p1_uncompressed)}`)}</td></tr>`;
-    psarBody += `<tr><td>p2</td><td>${badge(c.p2_matches, c.p2_matches ? '0' : `got ${hex(disc.p2_offset)}`)}</td></tr>`;
-    psarBody += `<tr><td>First idx</td><td>${badge(c.firstIndexOffsetZero, 'offset == 0')}</td></tr>`;
-    psarBody += `<tr><td>Block range</td><td>${badge(c.allBlocksInRange, 'all <= 0x9300')}</td></tr>`;
-    psarBody += '</table>';
-  }
-
-  html += collapsibleSection('DATA.PSAR', psarBody, true);
-
-  return html;
-}
+// renderInspectResults replaced by renderEbootResults + renderEbootSummary above
 
 function initCollapsibles() {
   for (const header of diagnoseResults.querySelectorAll('.section-header')) {
@@ -694,6 +1348,20 @@ function initCollapsibles() {
       const body = header.nextElementSibling;
       arrow.classList.toggle('collapsed');
       body.classList.toggle('collapsed');
+    });
+  }
+}
+
+function initDiagnoseTabs() {
+  const tabBar = diagnoseResults.querySelector('[data-diagnose-tabs]');
+  if (!tabBar) return;
+  for (const btn of tabBar.querySelectorAll('button')) {
+    btn.addEventListener('click', () => {
+      const tabId = btn.dataset.dtab;
+      for (const b of tabBar.querySelectorAll('button')) b.classList.toggle('active', b === btn);
+      for (const p of diagnoseResults.querySelectorAll('[data-dtab-panel]')) {
+        p.classList.toggle('active', p.dataset.dtabPanel === tabId);
+      }
     });
   }
 }
