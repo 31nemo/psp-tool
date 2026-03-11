@@ -30,6 +30,7 @@ const ebootCompressionLabel = document.getElementById('ebootCompressionLabel');
 const ebootThreads = document.getElementById('ebootThreads');
 const ebootThreadsVal = document.getElementById('ebootThreadsVal');
 const discIdDetected = document.getElementById('discIdDetected');
+const ebootCoverImg = document.getElementById('ebootCoverImg');
 const ebootProgressArea = document.getElementById('ebootProgressArea');
 const ebootProgressFill = document.getElementById('ebootProgressFill');
 const ebootProgressLabel = document.getElementById('ebootProgressLabel');
@@ -54,6 +55,11 @@ const ebootFetchArt = document.getElementById('ebootFetchArt');
 try { ebootFetchArt.checked = localStorage.getItem('fetchArtwork') === 'true'; } catch {}
 ebootFetchArt.addEventListener('change', () => {
   try { localStorage.setItem('fetchArtwork', ebootFetchArt.checked); } catch {}
+  if (!ebootFetchArt.checked) {
+    if (!icon0IsCustom) { currentIcon0 = null; artIcon0.src = ''; }
+    if (!pic0IsCustom) { currentPic0 = null; artPic0.src = ''; }
+    if (!pic1IsCustom) { currentPic1 = null; artPic1.src = ''; }
+  }
   scheduleArtworkRegenerate();
 });
 
@@ -154,6 +160,33 @@ function scheduleArtworkRegenerate() {
 ebootTitle.addEventListener('input', scheduleArtworkRegenerate);
 ebootDiscId.addEventListener('input', scheduleArtworkRegenerate);
 
+// ── Cover image ───────────────────────────────────────────────────────────────
+let coverDebounce = null;
+function scheduleCoverFetch() {
+  clearTimeout(coverDebounce);
+  coverDebounce = setTimeout(() => updateCoverImage(), 400);
+}
+
+async function updateCoverImage() {
+  const discId = ebootDiscId.value.trim();
+  if (!discId) {
+    ebootCoverImg.style.display = 'none';
+    ebootCoverImg.src = '';
+    return;
+  }
+  const data = await fetchArtworkImage('icon0', discId);
+  if (data) {
+    const url = URL.createObjectURL(new Blob([data], { type: 'image/jpeg' }));
+    ebootCoverImg.src = url;
+    ebootCoverImg.style.display = 'block';
+  } else {
+    ebootCoverImg.style.display = 'none';
+    ebootCoverImg.src = '';
+  }
+}
+
+ebootDiscId.addEventListener('input', scheduleCoverFetch);
+
 // Drop zone
 ebootDropZone.addEventListener('click', () => ebootFileInput.click());
 ebootDropZone.addEventListener('dragover', e => { e.preventDefault(); ebootDropZone.classList.add('dragover'); });
@@ -219,6 +252,7 @@ async function handleEbootDrop(fileList) {
     if (detected?.title) {
       ebootTitle.value = detected.title;
     }
+    updateCoverImage();
     regenerateDefaults();
   }
 }
@@ -238,6 +272,8 @@ function resetEbootUI() {
   artIcon0.src = '';
   artPic0.src = '';
   artPic1.src = '';
+  ebootCoverImg.src = '';
+  ebootCoverImg.style.display = 'none';
   document.getElementById('artIcon0Reset').style.display = 'none';
   document.getElementById('artPic0Reset').style.display = 'none';
   document.getElementById('artPic1Reset').style.display = 'none';
@@ -350,6 +386,7 @@ async function startPS1WithCuesAndBins(cueFiles, binFiles) {
       if (detected?.title) {
         ebootTitle.value = detected.title;
       }
+      updateCoverImage();
       regenerateDefaults();
     }
   }
@@ -422,6 +459,7 @@ async function addDiscFiles(cueFiles, binFiles) {
         if (detected?.title) {
           ebootTitle.value = detected.title;
         }
+        updateCoverImage();
         regenerateDefaults();
       }
     }

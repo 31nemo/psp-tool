@@ -82,10 +82,17 @@
         <div class="add-disc-hint" id="addDiscHint" style="display:none">Drop more discs to add them (up to 5)</div>
 
         <div class="eboot-opts" id="ebootOpts">
-          <label for="ebootTitle">Game Title</label>
-          <input type="text" id="ebootTitle" data-testid="eboot-title" placeholder="e.g. FINAL FANTASY VII">
-          <label for="ebootDiscId">Disc ID <span class="detected" id="discIdDetected"></span></label>
-          <input type="text" id="ebootDiscId" data-testid="eboot-disc-id" placeholder="e.g. SCUS94163">
+          <div class="opts-main-row">
+            <div class="opts-fields">
+              <label for="ebootTitle">Game Title</label>
+              <input type="text" id="ebootTitle" data-testid="eboot-title" placeholder="e.g. FINAL FANTASY VII">
+              <label for="ebootDiscId">Disc ID <span class="detected" id="discIdDetected"></span></label>
+              <input type="text" id="ebootDiscId" data-testid="eboot-disc-id" placeholder="e.g. SCUS94163">
+            </div>
+            <div class="opts-cover">
+              <img id="ebootCoverImg" class="cover-preview" style="display:none" title="Game cover">
+            </div>
+          </div>
           <label>Compression Level <span class="info-tip" title="Level 6 offers a good balance of size and speed. Higher levels take significantly longer with diminishing returns.">&#9432;</span></label>
           <div class="range-row">
             <input type="range" id="ebootCompression" min="0" max="9" value="5">
@@ -126,21 +133,21 @@
             <label>Artwork (click to replace)</label>
             <div class="artwork-row">
               <div class="artwork-slot">
-                <span class="art-label">ICON0</span>
+                <span class="art-label">ICON0 (Icon)</span>
                 <img class="art-preview" id="artIcon0">
                 <input type="file" id="artIcon0Input" accept="image/png,image/jpeg" style="display:none">
                 <span class="art-dims">144x80</span>
                 <button class="art-reset" id="artIcon0Reset">reset</button>
               </div>
               <div class="artwork-slot">
-                <span class="art-label">PIC0</span>
+                <span class="art-label">PIC0 (Info)</span>
                 <img class="art-preview" id="artPic0">
                 <input type="file" id="artPic0Input" accept="image/png,image/jpeg" style="display:none">
                 <span class="art-dims">310x180</span>
                 <button class="art-reset" id="artPic0Reset">reset</button>
               </div>
               <div class="artwork-slot">
-                <span class="art-label">PIC1</span>
+                <span class="art-label">PIC1 (Background)</span>
                 <img class="art-preview" id="artPic1">
                 <input type="file" id="artPic1Input" accept="image/png,image/jpeg" style="display:none">
                 <span class="art-dims">480x272</span>

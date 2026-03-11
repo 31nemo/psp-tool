@@ -206,6 +206,14 @@ async function regenerateDefaults() {
   const fetchCb = document.getElementById('ebootFetchArt');
   const shouldFetch = fetchCb && fetchCb.checked && discId;
 
+  // When checkbox is off, clear non-custom images and hide them
+  if (!fetchCb || !fetchCb.checked) {
+    if (!icon0IsCustom) { currentIcon0 = null; artIcon0.src = ''; }
+    if (!pic0IsCustom) { currentPic0 = null; artPic0.src = ''; }
+    if (!pic1IsCustom) { currentPic1 = null; artPic1.src = ''; }
+    return;
+  }
+
   // Fetch all three types in parallel (each may independently 404)
   const fetched = shouldFetch
     ? await fetchAllArtwork(discId)
