@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/workspace/psp-toolkit status)",
+      "Read(//c/workspace/psp-toolkit-original/ui/**)",
+      "Read(//c/workspace/**)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
