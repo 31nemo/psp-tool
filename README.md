@@ -1,33 +1,32 @@
 # PSP Toolkit
 
-Browser-based tool for converting PSP and PS1 disc images. Everything runs
-client-side — no server, no uploads, your files never leave your machine.
+PSP 및 PS1 디스크 이미지를 변환하는 브라우저 기반 도구입니다. 모든 처리는 클라이언트에서 실행되며, 서버나 업로드가 없어 파일이 내 컴퓨터 밖으로 나가지 않습니다.
 
-## Features
+## 기능
 
-### CSO / ZSO / ISO Conversion
-Drop a PSP disc image and convert between formats:
-- **CSO** — deflate-compressed (smaller but slower to load on PSP)
-- **ZSO** — LZ4-compressed (slightly larger but much faster on PSP hardware)
-- **ISO** — uncompressed (largest, no decompression overhead)
+### CSO / ZSO / ISO 변환
+PSP 디스크 이미지를 드래그하여 포맷 간 변환:
+- **CSO** — deflate 압축 (용량 작음, PSP에서 로딩 속도 느림)
+- **ZSO** — LZ4 압축 (용량 약간 크지만 PSP에서 로딩 속도 빠름)
+- **ISO** — 비압축 (용량 가장 큼, 압축 해제 오버헤드 없음)
 
-All 6 conversion paths work: CSO↔ISO, ZSO↔ISO, CSO↔ZSO.
+6가지 변환 경로 모두 지원: CSO↔ISO, ZSO↔ISO, CSO↔ZSO
 
 ### PS1 → EBOOT.PBP
-Drop a PS1 disc image (.bin/.iso, with or without .cue) and build a PSP-compatible EBOOT.PBP:
-- Auto-detects disc ID from SYSTEM.CNF and title from ISO volume ID (falls back to filename)
-- Multi-disc support (up to 5 discs)
-- CUE/BIN pairing — drop CUE+BIN files together, or CUEs first then BINs
-- Configurable compression level (0–9)
-- Custom artwork — click ICON0/PIC0/PIC1 previews to upload your own images, or use auto-generated title art
-- Optional artwork auto-fetch from a community covers database when a disc ID is detected (requires network, off by default)
-- Tested on PSP-3000 with ARK-4 custom firmware
+PS1 디스크 이미지(.bin/.iso, .cue 유무 무관)를 드래그하여 PSP 호환 EBOOT.PBP 생성:
+- SYSTEM.CNF에서 디스크 ID, ISO 볼륨 ID에서 타이틀 자동 감지 (없으면 파일명 사용)
+- 멀티 디스크 지원 (최대 5장)
+- CUE/BIN 페어링 — CUE+BIN 파일을 함께 드래그하거나, CUE 먼저 BIN 나중에 드래그 가능
+- 압축 레벨 설정 (0–9)
+- 커스텀 아트워크 — ICON0/PIC0/PIC1 미리보기를 클릭하여 직접 이미지 업로드, 또는 자동 생성 타이틀 아트 사용
+- 디스크 ID가 감지되면 커뮤니티 커버 데이터베이스에서 아트워크 자동 가져오기 (네트워크 필요, 기본 OFF)
+- PSP-3000 + ARK-4 커스텀 펌웨어 환경에서 테스트 완료
 
-## Usage
+## 사용법
 
-Download `index.html` from the [latest release](../../releases/latest) and open it in your browser. That's it — single file, no install, no server.
+[최신 릴리즈](../../releases/latest)에서 `index.html`을 다운로드하여 브라우저로 열기만 하면 됩니다. 단일 파일, 설치 불필요, 서버 불필요.
 
-### Building from source
+### 소스에서 빌드
 
 ```sh
 npm install
@@ -35,70 +34,67 @@ node build.js
 open dist/index.html
 ```
 
-### Testing
+### 테스트
 
 ```sh
-npm test                    # Unit tests (node:test)
-npm run test:e2e            # Playwright E2E tests (local Chromium + Firefox)
-npm run test:e2e:docker     # E2E tests in Docker (matches CI)
-npm run test:e2e:update     # Update screenshot baselines
+npm test                    # 유닛 테스트 (node:test)
+npm run test:e2e            # Playwright E2E 테스트 (로컬 Chromium + Firefox)
+npm run test:e2e:docker     # Docker에서 E2E 테스트 (CI 환경과 동일)
+npm run test:e2e:update     # 스크린샷 기준선 업데이트
 ```
 
-## How It Works
+## 동작 원리
 
-- **Web Workers** handle all compression off the main thread so the UI stays
-  responsive even with 1GB+ files
-- **pako 2.1.0** for deflateRaw and inflateRaw
-- **LZ4** block compress/decompress implemented from scratch in JS
-- PS1 EBOOT construction follows the PSISOIMG0000 format: each 0x9300-byte
-  block of the disc image is independently deflate-compressed, with an index
-  table for random access
+- **Web Worker**가 모든 압축을 메인 스레드 밖에서 처리하므로 1GB 이상의 파일에서도 UI가 멈추지 않음
+- **pako 2.1.0** — deflateRaw / inflateRaw 처리
+- **LZ4** 블록 압축/해제를 JS로 직접 구현
+- PS1 EBOOT 구성은 PSISOIMG0000 포맷을 따름: 디스크 이미지의 0x9300바이트 블록을 각각 독립적으로 deflate 압축하고, 랜덤 접근을 위한 인덱스 테이블 포함
 
-## File Structure
+## 파일 구조
 
 ```
-app.html                — Main HTML shell
-style.css               — Dark theme styles
-build.js                — Produces dist/index.html (single-file build)
-worker.js               — Web Worker for CSO/ZSO/ISO conversion
-cso-compress-worker.js  — Web Worker for parallel CSO/ZSO compression
-eboot-worker.js         — Web Worker for EBOOT.PBP construction
-compress-worker.js      — Web Worker for parallel EBOOT compression
-Dockerfile.test         — Docker image for CI/E2E tests
-playwright.config.js    — Playwright E2E config
+app.html                — 메인 HTML 셸
+style.css               — 다크 테마 스타일
+build.js                — dist/index.html 생성 (단일 파일 빌드)
+worker.js               — CSO/ZSO/ISO 변환용 Web Worker
+cso-compress-worker.js  — CSO/ZSO 병렬 압축용 Web Worker
+eboot-worker.js         — EBOOT.PBP 생성용 Web Worker
+compress-worker.js      — EBOOT 병렬 압축용 Web Worker
+Dockerfile.test         — CI/E2E 테스트용 Docker 이미지
+playwright.config.js    — Playwright E2E 설정
 ui/
-  artwork.js            — EBOOT artwork generation (ICON0/PIC0/PIC1)
-  shared.js             — Shared utilities, disc detection, CUE parsing
-  convert.js            — CSO/ZSO/ISO conversion UI
-  eboot-ui.js           — EBOOT builder UI
-  diagnose.js           — EBOOT diagnostic/inspection UI
+  artwork.js            — EBOOT 아트워크 생성 (ICON0/PIC0/PIC1)
+  shared.js             — 공통 유틸리티, 디스크 감지, CUE 파싱
+  convert.js            — CSO/ZSO/ISO 변환 UI
+  eboot-ui.js           — EBOOT 빌더 UI
+  diagnose.js           — EBOOT 진단/검사 UI
+  pbp-editor.js         — PBP 편집기 UI
 eboot/
-  assembler.js          — Orchestrates PBP construction
-  pbp.js                — PBP container header writer
-  sfo.js                — PARAM.SFO builder
-  psisoimg.js           — Single-disc PSAR compression
-  pstitleimg.js         — Multi-disc PSAR wrapper
-  toc.js                — CD table of contents generator
-  cue.js                — CUE sheet parser
-  discid.js             — Disc ID auto-detection from ISO9660
-  assets.js             — Static firmware blobs (DATA.PSP ELF, STARTDAT)
+  assembler.js          — PBP 생성 오케스트레이터
+  pbp.js                — PBP 컨테이너 헤더 생성
+  sfo.js                — PARAM.SFO 빌더
+  psisoimg.js           — 단일 디스크 PSAR 압축
+  pstitleimg.js         — 멀티 디스크 PSAR 래퍼
+  toc.js                — CD 목차(TOC) 생성
+  cue.js                — CUE 시트 파서
+  discid.js             — ISO9660에서 디스크 ID 자동 감지
+  assets.js             — 정적 펌웨어 블롭 (DATA.PSP ELF, STARTDAT)
 vendor/
-  zlib.cjs              — deflateRaw + inflateRaw (pako 2.1.0, bundled by esbuild)
+  zlib.cjs              — deflateRaw + inflateRaw (pako 2.1.0, esbuild 번들)
 test/
-  e2e/convert.spec.js   — Playwright E2E tests for convert tab
-  fixtures/test.iso     — Shared synthetic ISO fixture (64KB)
+  e2e/convert.spec.js   — 변환 탭 Playwright E2E 테스트
+  fixtures/test.iso     — 공용 합성 ISO 픽스처 (64KB)
 scripts/
-  generate-e2e-fixture.js   — Generates test/fixtures/test.iso
-  compare-eboots.cjs        — Diagnostic: compare EBOOTs structurally
+  generate-e2e-fixture.js   — test/fixtures/test.iso 생성
+  compare-eboots.cjs        — 진단: EBOOT 구조 비교
 tools/
-  inspect-eboot.js      — EBOOT structural inspector
+  inspect-eboot.js      — EBOOT 구조 검사 도구
 ```
 
-## Prior Art
+## 참고 프로젝트
 
-This project's EBOOT format implementation is informed by several open-source
-projects. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+이 프로젝트의 EBOOT 포맷 구현은 여러 오픈소스 프로젝트를 참고했습니다. 자세한 내용은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참조하세요.
 
-## License
+## 라이선스
 
 MIT
