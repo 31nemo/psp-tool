@@ -59,7 +59,7 @@ const BLOB_FILES = ['datapsp.bin'];
 const inlineBlobsPlugin = {
   name: 'inline-blobs',
   setup(build) {
-    build.onLoad({ filter: /eboot\/assets\.js$/ }, () => {
+    build.onLoad({ filter: /eboot[\/\\]assets\.js$/ }, () => {
       const blobData = {};
       for (const name of BLOB_FILES) {
         blobData[name] = fs.readFileSync(path.join(ROOT, 'eboot', 'blobs', name)).toString('base64');
@@ -116,10 +116,12 @@ const uiPartials = [
   'ui/shared.js',
   'ui/artwork-fetch.js',
   'ui/convert.js',
+  'ui/pbp-editor.js',
   'ui/eboot-ui.js',
   'ui/diagnose.js',
   'ui/patch.js',
 ];
+
 const uiCode = uiPartials.map(read).join('\n');
 
 // Bundle all workers with esbuild

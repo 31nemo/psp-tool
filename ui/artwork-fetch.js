@@ -1,16 +1,16 @@
-// ── Artwork fetching from psx-artwork GitHub repo ───────────────────────────
+// ── psx-artwork GitHub 저장소에서 아트워크 가져오기 ─────────────────────────
 //
-// Opt-in feature: when "Fetch artwork by disc ID" is checked, fetches cover
-// art, title screens, and screenshots from a GitHub-hosted artwork repository.
-// Each image type has its own backend (URL pattern) and fails gracefully if
-// the image doesn't exist (404 → null, no error).
+// 선택적 기능: "디스크 ID로 아트워크 가져오기"가 체크되면, GitHub 호스팅
+// 아트워크 저장소에서 커버 아트, 타이틀 화면, 스크린샷을 가져옵니다.
+// 각 이미지 타입은 자체 백엔드(URL 패턴)를 가지며 이미지가 없는 경우
+// 정상적으로 실패합니다 (404 → null, 오류 없음).
 //
-// Repository structure: {category}/{prefix}/{digits}/{serial}.jpg
-// Example: covers/SLUS/008/SLUS-00896.jpg
+// 저장소 구조: {category}/{prefix}/{digits}/{serial}.jpg
+// 예시: covers/SLUS/008/SLUS-00896.jpg
 
 const ARTWORK_REPO_OWNER = 'jamescook';
 
-/** Convert compact disc ID ("SLUS00896") to hyphenated form ("SLUS-00896"). */
+/** 압축된 디스크 ID("SLUS00896")를 하이픈 형식("SLUS-00896")으로 변환합니다. */
 function formatDiscIdForUrl(discId) {
   if (discId.length >= 5 && discId[4] !== '-') {
     return discId.slice(0, 4) + '-' + discId.slice(4);
@@ -18,9 +18,9 @@ function formatDiscIdForUrl(discId) {
   return discId;
 }
 
-// Build a psx-artwork repo URL. Directory structure:
+// psx-artwork 저장소 URL을 빌드합니다. 디렉터리 구조:
 //   {category}/{prefix}/{digits}/{serial}.jpg
-// e.g. covers/SLUS/008/SLUS-00896.jpg
+// 예: covers/SLUS/008/SLUS-00896.jpg
 function psxArtworkUrl(category, discId) {
   const serial = formatDiscIdForUrl(discId);
   const [prefix, num] = serial.split('-');
@@ -28,7 +28,7 @@ function psxArtworkUrl(category, discId) {
   return `https://raw.githubusercontent.com/${ARTWORK_REPO_OWNER}/psx-artwork/main/${category}/${prefix}/${digits}/${serial}.jpg`;
 }
 
-// Each image type has its own provider (URL pattern) and can be swapped independently.
+// 각 이미지 타입은 자체 제공자(URL 패턴)를 가지며 독립적으로 교체할 수 있습니다.
 const ARTWORK_BACKENDS = {
   icon0: {
     name: 'PSX Artwork — covers',
@@ -44,12 +44,12 @@ const ARTWORK_BACKENDS = {
   },
 };
 
-let _artworkFetcher = null; // null = use global fetch
+let _artworkFetcher = null; // null = 전역 fetch 사용
 
 function setArtworkBackend(imageType, provider) { ARTWORK_BACKENDS[imageType] = provider; }
 function setArtworkFetcher(fn) { _artworkFetcher = fn; }
 
-// Fetch a single image type. Returns Uint8Array or null.
+// 단일 이미지 타입을 가져옵니다. Uint8Array 또는 null을 반환합니다.
 async function fetchArtworkImage(imageType, discId) {
   if (!discId) return null;
   const backend = ARTWORK_BACKENDS[imageType];
@@ -64,8 +64,8 @@ async function fetchArtworkImage(imageType, discId) {
   }
 }
 
-// Fetch all three image types in parallel. Returns { icon0, pic0, pic1 },
-// each either Uint8Array or null.
+// 세 가지 이미지 타입 모두 병렬로 가져옵니다. { icon0, pic0, pic1 }을 반환하며,
+// 각각 Uint8Array 또는 null입니다.
 async function fetchAllArtwork(discId) {
   if (!discId) return { icon0: null, pic0: null, pic1: null };
   const [icon0, pic0, pic1] = await Promise.all([

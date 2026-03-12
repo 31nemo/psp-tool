@@ -207,12 +207,166 @@ input[type="file"] { display: none; }
   margin-top: 0.6rem;
   display: none;
 }
+.eboot-opts-row {
+  display: block;
+}
+.eboot-settings {
+  min-width: 0;
+}
+.eboot-cover {
+  display: none;
+}
+.eboot-cover-img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.eboot-snapshot-img {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  margin-top: 0.4rem;
+  display: block;
+}
+.eboot-cover .art-label {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+  text-align: center;
+}
+#snapshotPanel {
+  width: 100%;
+  text-align: center;
+}
+#snapshotPanel .art-label {
+  margin-top: 0.6rem;
+}
+/* Cover download buttons */
+.cover-dl-row {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.3rem;
+}
+.cover-dl-btn {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.45rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.cover-dl-btn:hover { border-color: var(--accent); }
+/* Resource auto-search section */
+.resource-search-section {
+  margin-top: 0.7rem;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  background: rgba(100, 176, 223, 0.04);
+}
+.resource-search-section > label {
+  font-size: var(--font-xs);
+  color: var(--info);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  display: block;
+}
+.resource-search-links {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.rs-link {
+  font-size: var(--font-xs);
+  padding: 0.18rem 0.5rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.rs-link:hover { border-color: var(--accent); }
+.resource-search-preview {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed var(--border-muted);
+  border-radius: 6px;
+  padding: 0.45rem;
+  margin-bottom: 0.25rem;
+}
+.rs-preview-img {
+  max-width: 90px;
+  max-height: 70px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: grab;
+}
+.rs-preview-apply {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.rs-apply-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-bottom: 0.1rem;
+}
+.rs-apply-btn {
+  font-size: var(--font-xs);
+  padding: 0.15rem 0.4rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.rs-apply-btn:hover { border-color: var(--accent); }
+.rs-status {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  min-height: 0.9rem;
+}
+/* Cover visible: 2-column layout with cover on the right */
+.eboot-opts.cover-visible .eboot-opts-row {
+  display: flex;
+  flex-direction: row;
+  gap: 1.2rem;
+  align-items: flex-start;
+}
+.eboot-opts.cover-visible .eboot-settings {
+  flex: 1;
+}
+.eboot-opts.cover-visible .eboot-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  width: 210px;
+  flex-shrink: 0;
+}
 .eboot-opts label {
   display: block;
   font-size: var(--font-sm);
   color: var(--text-secondary);
-  margin-top: 0.6rem;
-  margin-bottom: 0.2rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.15rem;
 }
 .eboot-opts label:first-child { margin-top: 0; }
 .eboot-opts input[type="text"] {
@@ -397,18 +551,51 @@ input[type="file"] { display: none; }
   color: var(--text-dim);
   margin-top: 0.15rem;
 }
+.artwork-slot .art-btns {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
 .artwork-slot .art-reset {
   background: none;
   border: none;
-  color: var(--error);
+  color: var(--text-dim);
   font-size: var(--font-xs);
   cursor: pointer;
   padding: 0.1rem 0.3rem;
   display: none;
 }
-.artwork-slot .art-reset:hover {
-  text-decoration: underline;
+.artwork-slot .art-reset:hover { text-decoration: underline; }
+.artwork-slot .art-delete {
+  background: none;
+  border: none;
+  color: var(--error);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  line-height: 1;
+  opacity: 0.5;
 }
+.artwork-slot .art-delete:hover { opacity: 1; }
+.artwork-slot .art-delete.slot-deleted {
+  opacity: 1;
+  font-weight: bold;
+}
+/* ICON0/ICON1 slots: show at natural dimensions */
+.slot-icon0 .art-preview,
+.slot-icon1 .art-preview {
+  width: auto;
+  max-width: 100%;
+  max-height: 80px;
+}
+/* ICON1 empty state: show a placeholder box so slot is always visible */
+.slot-icon1 .art-preview:not([src]),
+.slot-icon1 .art-preview[src=""] {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+}
+
 
 /* Diagnose tab results */
 .diagnose-results {

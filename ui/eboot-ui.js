@@ -1,16 +1,16 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// EBOOT TAB — PS1 disc image → EBOOT.PBP builder
+// EBOOT 탭 — PS1 디스크 이미지 → EBOOT.PBP 빌더
 //
-// Handles the "EBOOT" tab UI: disc image drop zone, multi-disc management,
-// CUE/BIN pairing, game title/disc ID detection, artwork previews, compression
-// settings, parallel worker dispatch, progress display, and ZIP download.
+// "EBOOT" 탭 UI를 처리합니다: 디스크 이미지 드롭 존, 멀티 디스크 관리,
+// CUE/BIN 페어링, 게임 타이틀/디스크 ID 감지, 아트워크 미리보기, 압축
+// 설정, 병렬 워커 디스패치, 진행률 표시, ZIP 다운로드.
 //
-// Build pipeline:
-//   1. User drops BIN/ISO/CUE files → auto-detect disc ID and title
-//   2. Read disc images into ISO_BLOCK_SIZE chunks
-//   3. Dispatch chunks to compress-worker.js instances (parallel deflate)
-//   4. Send compressed data to eboot-worker.js (assembles PBP)
-//   5. Download result as EBOOT.PBP inside a ZIP
+// 빌드 파이프라인:
+//   1. 사용자가 BIN/ISO/CUE 파일을 드롭 → 디스크 ID 및 타이틀 자동 감지
+//   2. 디스크 이미지를 ISO_BLOCK_SIZE 청크로 읽기
+//   3. 청크를 compress-worker.js 인스턴스에 배포 (병렬 deflate)
+//   4. 압축된 데이터를 eboot-worker.js로 전송 (PBP 조립)
+//   5. ZIP 내에 EBOOT.PBP로 결과 다운로드
 // ══════════════════════════════════════════════════════════════════════════════
 
 const ebootDropZone = document.getElementById('ebootDropZone');
@@ -36,6 +36,7 @@ const ebootProgressLabel = document.getElementById('ebootProgressLabel');
 const ebootProgressPct = document.getElementById('ebootProgressPct');
 const ebootStatusEl = document.getElementById('ebootStatus');
 const artIcon0 = document.getElementById('artIcon0');
+const artIcon1 = document.getElementById('artIcon1');
 const artPic0 = document.getElementById('artPic0');
 const artPic1 = document.getElementById('artPic1');
 
@@ -50,14 +51,14 @@ const ebootParentalLevel = document.getElementById('ebootParentalLevel');
 const ebootRegion = document.getElementById('ebootRegion');
 const ebootFetchArt = document.getElementById('ebootFetchArt');
 
-// Persist fetch-artwork checkbox via localStorage
+// localStorage를 통해 아트워크 가져오기 체크박스 상태 유지
 try { ebootFetchArt.checked = localStorage.getItem('fetchArtwork') === 'true'; } catch {}
 ebootFetchArt.addEventListener('change', () => {
   try { localStorage.setItem('fetchArtwork', ebootFetchArt.checked); } catch {}
   scheduleArtworkRegenerate();
 });
 
-// Elements to disable during build
+// 빌드 중 비활성화할 요소들
 const ebootInputs = [ebootTitle, ebootDiscId, ebootCompression, ebootThreads, ebootParentalLevel, ebootRegion, ebootFetchArt];
 
 function setEbootInputsDisabled(disabled) {
@@ -73,7 +74,7 @@ function setEbootInputsDisabled(disabled) {
 ebootCancelBtn.addEventListener('click', () => {
   if (!ebootWorking) return;
   if (!confirm('Cancel the current build?')) return;
-  // Terminate all active workers
+  // 모든 활성 워커 종료
   if (ebootActiveWorker) { ebootActiveWorker.terminate(); ebootActiveWorker = null; }
   for (const w of ebootActiveCompressWorkers) w.terminate();
   ebootActiveCompressWorkers = [];
@@ -98,63 +99,118 @@ ebootThreads.addEventListener('input', () => {
   ebootThreadsVal.textContent = ebootThreads.value;
 });
 
-// Artwork: click preview → open file picker
+// 아트워크: 미리보기 클릭 → 파일 선택기 열기
 artIcon0.addEventListener('click', () => document.getElementById('artIcon0Input').click());
+artIcon1.addEventListener('click', () => document.getElementById('artIcon1Input').click());
 artPic0.addEventListener('click', () => document.getElementById('artPic0Input').click());
 artPic1.addEventListener('click', () => document.getElementById('artPic1Input').click());
 
 document.getElementById('artIcon0Input').addEventListener('change', async function() {
   if (!this.files[0]) return;
-  currentIcon0 = await resizeImageToUint8Array(this.files[0], 144, 80);
-  artIcon0.src = URL.createObjectURL(new Blob([currentIcon0], { type: 'image/png' }));
-  icon0IsCustom = true;
+  currentIcon0 = new Uint8Array(await this.files[0].arrayBuffer());
+  artIcon0.src = URL.createObjectURL(new Blob([currentIcon0]));
+  icon0IsCustom = true; icon0Deleted = false;
   document.getElementById('artIcon0Reset').style.display = 'inline';
+  document.getElementById('artIcon0Delete').classList.remove('slot-deleted');
   this.value = '';
 });
 document.getElementById('artPic0Input').addEventListener('change', async function() {
   if (!this.files[0]) return;
   currentPic0 = await resizeImageToUint8Array(this.files[0], 310, 180);
   artPic0.src = URL.createObjectURL(new Blob([currentPic0], { type: 'image/png' }));
-  pic0IsCustom = true;
+  pic0IsCustom = true; pic0Deleted = false;
   document.getElementById('artPic0Reset').style.display = 'inline';
+  document.getElementById('artPic0Delete').classList.remove('slot-deleted');
   this.value = '';
 });
 document.getElementById('artPic1Input').addEventListener('change', async function() {
   if (!this.files[0]) return;
   currentPic1 = await resizeImageToUint8Array(this.files[0], 480, 272);
   artPic1.src = URL.createObjectURL(new Blob([currentPic1], { type: 'image/png' }));
-  pic1IsCustom = true;
+  pic1IsCustom = true; pic1Deleted = false;
   document.getElementById('artPic1Reset').style.display = 'inline';
+  document.getElementById('artPic1Delete').classList.remove('slot-deleted');
   this.value = '';
 });
 
 document.getElementById('artIcon0Reset').addEventListener('click', async () => {
-  icon0IsCustom = false;
+  icon0IsCustom = false; icon0Deleted = false; currentIcon0 = null;
   document.getElementById('artIcon0Reset').style.display = 'none';
+  document.getElementById('artIcon0Delete').classList.remove('slot-deleted');
   await regenerateDefaults();
 });
 document.getElementById('artPic0Reset').addEventListener('click', async () => {
-  pic0IsCustom = false;
+  pic0IsCustom = false; pic0Deleted = false; currentPic0 = null;
   document.getElementById('artPic0Reset').style.display = 'none';
+  document.getElementById('artPic0Delete').classList.remove('slot-deleted');
   await regenerateDefaults();
 });
 document.getElementById('artPic1Reset').addEventListener('click', async () => {
-  pic1IsCustom = false;
+  pic1IsCustom = false; pic1Deleted = false; currentPic1 = null;
   document.getElementById('artPic1Reset').style.display = 'none';
+  document.getElementById('artPic1Delete').classList.remove('slot-deleted');
   await regenerateDefaults();
 });
+
+// × 버튼: 해당 슬롯을 PBP에서 완전히 제거. deleted=true로 fetch/regenerate 차단
+document.getElementById('artIcon0Delete').addEventListener('click', () => {
+  icon0IsCustom = false; icon0Deleted = true; currentIcon0 = null;
+  artIcon0.src = '';
+  document.getElementById('artIcon0Reset').style.display = 'inline';
+  document.getElementById('artIcon0Delete').classList.add('slot-deleted');
+});
+document.getElementById('artIcon1Delete').addEventListener('click', () => {
+  currentIcon1 = null;
+  artIcon1.src = '';
+  document.getElementById('icon1Dims').textContent = 'PMF/PNG';
+  document.getElementById('artIcon1Delete').style.display = 'none';
+});
+document.getElementById('artPic0Delete').addEventListener('click', () => {
+  pic0IsCustom = false; pic0Deleted = true; currentPic0 = null;
+  artPic0.src = '';
+  document.getElementById('artPic0Reset').style.display = 'inline';
+  document.getElementById('artPic0Delete').classList.add('slot-deleted');
+});
+document.getElementById('artPic1Delete').addEventListener('click', () => {
+  pic1IsCustom = false; pic1Deleted = true; currentPic1 = null;
+  artPic1.src = '';
+  document.getElementById('artPic1Reset').style.display = 'inline';
+  document.getElementById('artPic1Delete').classList.add('slot-deleted');
+});
+
+// ICON1: 원시 파일 (PMF 애니메이션 아이콘 또는 PNG) — 기본값 없음, 그냥 초기화
+document.getElementById('artIcon1Input').addEventListener('change', async function() {
+  if (!this.files[0]) return;
+  const f = this.files[0];
+  currentIcon1 = new Uint8Array(await f.arrayBuffer());
+  // PNG이면 이미지 미리보기 표시, 아니면 파일명을 크기 레이블로 표시
+  if (currentIcon1[0] === 0x89 && currentIcon1[1] === 0x50) {
+    artIcon1.src = URL.createObjectURL(new Blob([currentIcon1], { type: 'image/png' }));
+  } else {
+    artIcon1.src = '';
+  }
+  document.getElementById('icon1Dims').textContent = f.name;
+  document.getElementById('artIcon1Delete').style.display = 'inline';
+  this.value = '';
+});
+
 
 let artworkDebounce = null;
 function scheduleArtworkRegenerate() {
   clearTimeout(artworkDebounce);
   artworkDebounce = setTimeout(() => {
-    if (ebootOpts.style.display !== 'none') regenerateDefaults();
+    if (ebootOpts.style.display !== 'none') {
+      regenerateDefaults();
+      const discId = ebootDiscId.value.trim();
+      updateCoverImage(discId);
+      updateResourceSearch(discId);
+    }
   }, 300);
 }
 ebootTitle.addEventListener('input', scheduleArtworkRegenerate);
 ebootDiscId.addEventListener('input', scheduleArtworkRegenerate);
 
-// Drop zone
+// 드롭 존
 ebootDropZone.addEventListener('click', () => ebootFileInput.click());
 ebootDropZone.addEventListener('dragover', e => { e.preventDefault(); ebootDropZone.classList.add('dragover'); });
 ebootDropZone.addEventListener('dragleave', () => ebootDropZone.classList.remove('dragover'));
@@ -172,28 +228,35 @@ async function handleEbootDrop(fileList) {
   if (ebootWorking) return;
 
   const allFiles = Array.from(fileList);
+
+  // 단일 .pbp → 편집 모드
+  if (allFiles.length === 1 && allFiles[0].name.toLowerCase().endsWith('.pbp')) {
+    await loadExistingPbp(allFiles[0]);
+    return;
+  }
+
   const cueFiles = allFiles.filter(f => f.name.toLowerCase().endsWith('.cue'));
   const nonCueFiles = allFiles.filter(f => !f.name.toLowerCase().endsWith('.cue'));
 
-  // If we're already in multi-disc mode and more files are dropped, add them
+  // 이미 멀티 디스크 모드이고 더 많은 파일이 드롭된 경우, 추가
   if (ebootFiles.length > 0) {
     await addDiscFiles(cueFiles, nonCueFiles);
     return;
   }
 
-  // If only CUE files dropped, parse them and wait for BINs
+  // CUE 파일만 드롭된 경우, 파싱 후 BIN 파일 대기
   if (cueFiles.length > 0 && nonCueFiles.length === 0) {
     await startPS1WithCues(cueFiles);
     return;
   }
 
-  // If CUEs + BINs dropped together, pair them up
+  // CUE + BIN이 함께 드롭된 경우, 페어링
   if (cueFiles.length > 0 && nonCueFiles.length > 0) {
     await startPS1WithCuesAndBins(cueFiles, nonCueFiles);
     return;
   }
 
-  // No CUEs — just BIN files
+  // CUE 없음 — BIN 파일만
   resetEbootUI();
   ebootFiles = nonCueFiles.slice(0, 5).map(f => ({ file: f, cueText: null, cueTracks: null }));
   sortEbootFiles();
@@ -219,6 +282,8 @@ async function handleEbootDrop(fileList) {
     if (detected?.title) {
       ebootTitle.value = detected.title;
     }
+    updateCoverImage(ebootDiscId.value.trim());
+    updateResourceSearch(ebootDiscId.value.trim());
     regenerateDefaults();
   }
 }
@@ -228,19 +293,30 @@ function resetEbootUI() {
   ebootStatusEl.className = 'status';
   ebootProgressArea.style.display = 'none';
   ebootOpts.style.display = 'none';
+  ebootOpts.classList.remove('cover-visible');
+  const coverImg = document.getElementById('ebootCoverImg');
+  if (coverImg) coverImg.src = '';
+  updateResourceSearch('');
   discListEl.innerHTML = '';
   addDiscHint.style.display = 'none';
   document.getElementById('buildLogArea').style.display = 'none';
   ebootFiles = [];
   pendingCues = [];
   icon0IsCustom = pic0IsCustom = pic1IsCustom = false;
-  currentIcon0 = currentPic0 = currentPic1 = null;
+  currentIcon0 = currentIcon1 = currentPic0 = currentPic1 = null;
+  icon0Deleted = pic0Deleted = pic1Deleted = false;
   artIcon0.src = '';
+  artIcon1.src = '';
   artPic0.src = '';
   artPic1.src = '';
   document.getElementById('artIcon0Reset').style.display = 'none';
   document.getElementById('artPic0Reset').style.display = 'none';
   document.getElementById('artPic1Reset').style.display = 'none';
+  document.getElementById('artIcon0Delete').classList.remove('slot-deleted');
+  document.getElementById('artIcon1Delete').style.display = 'none';
+  document.getElementById('artPic0Delete').classList.remove('slot-deleted');
+  document.getElementById('artPic1Delete').classList.remove('slot-deleted');
+  document.getElementById('icon1Dims').textContent = 'PMF/PNG';
 }
 
 function showEbootActions() {
@@ -350,6 +426,8 @@ async function startPS1WithCuesAndBins(cueFiles, binFiles) {
       if (detected?.title) {
         ebootTitle.value = detected.title;
       }
+      updateCoverImage(ebootDiscId.value.trim());
+      updateResourceSearch(ebootDiscId.value.trim());
       regenerateDefaults();
     }
   }
@@ -422,6 +500,8 @@ async function addDiscFiles(cueFiles, binFiles) {
         if (detected?.title) {
           ebootTitle.value = detected.title;
         }
+        updateCoverImage(ebootDiscId.value.trim());
+        updateResourceSearch(ebootDiscId.value.trim());
         regenerateDefaults();
       }
     }
@@ -495,7 +575,7 @@ function showEbootProgress(pct, label) {
   ebootProgressLabel.textContent = label;
 }
 
-// ── Build log formatting ─────────────────────────────────────────────────────
+// ── 빌드 로그 포맷팅 ─────────────────────────────────────────────────────
 function formatBuildLog(log) {
   const lines = [];
   lines.push('EBOOT Build Log');
@@ -574,14 +654,14 @@ function showBuildLogDownload(log) {
   document.getElementById('buildLogArea').style.display = 'block';
 }
 
-// ── Parallel compression ─────────────────────────────────────────────────────
-// ISO_BLOCK_SIZE (0x9300) is declared in shared.js
+// ── 병렬 압축 ─────────────────────────────────────────────────────────────
+// ISO_BLOCK_SIZE (0x9300)는 shared.js에 선언됨
 
 async function compressDiscParallel(file, compressionLevel, numThreads, onProgress) {
   const fileSize = file.size;
   const totalBlocks = Math.ceil(fileSize / ISO_BLOCK_SIZE);
 
-  // Read all blocks from file
+  // 파일에서 모든 블록 읽기
   onProgress(0, 'Reading disc image...');
   const allBlocks = [];
   for (let i = 0; i < totalBlocks; i++) {
@@ -595,7 +675,7 @@ async function compressDiscParallel(file, compressionLevel, numThreads, onProgre
 
   onProgress(0.3, 'Compressing...');
 
-  // Split blocks into ranges for workers
+  // 블록을 워커용 범위로 분할
   const blocksPerWorker = Math.ceil(totalBlocks / numThreads);
   const ranges = [];
   for (let i = 0; i < numThreads; i++) {
@@ -606,7 +686,7 @@ async function compressDiscParallel(file, compressionLevel, numThreads, onProgre
     }
   }
 
-  // Spawn workers and distribute work
+  // 워커 생성 및 작업 배분
   const workerResults = new Array(ranges.length);
   const workerProgress = new Array(ranges.length).fill(0);
   let completedWorkers = 0;
@@ -624,7 +704,7 @@ async function compressDiscParallel(file, compressionLevel, numThreads, onProgre
           const avgProgress = workerProgress.reduce((a, b) => a + b, 0) / ranges.length;
           onProgress(0.3 + avgProgress * 0.65, `Compressing... (${numThreads} workers)`);
         } else if (msg.type === 'done') {
-          // Convert transferred ArrayBuffers back to Uint8Arrays
+          // 전송된 ArrayBuffer를 Uint8Array로 변환
           workerResults[msg.rangeIndex] = {
             parts: msg.parts.map(p => new Uint8Array(p.buffer || p)),
             indexEntries: msg.indexEntries,
@@ -634,7 +714,7 @@ async function compressDiscParallel(file, compressionLevel, numThreads, onProgre
           completedWorkers++;
 
           if (completedWorkers === ranges.length) {
-            // Stitch results — adjust offsets for ranges after the first
+            // 결과 조합 — 첫 번째 이후 범위의 오프셋 조정
             const allParts = [];
             const allIndexEntries = [];
             let runningOffset = 0;
@@ -677,7 +757,7 @@ async function compressDiscParallel(file, compressionLevel, numThreads, onProgre
         reject(new Error('Compression worker error: ' + (err.message || err)));
       };
 
-      // Transfer block ArrayBuffers to the worker
+      // 블록 ArrayBuffer를 워커로 전송
       worker.postMessage(
         { blocks: ranges[r], compressionLevel, rangeIndex: r },
         blockBuffers
@@ -686,7 +766,7 @@ async function compressDiscParallel(file, compressionLevel, numThreads, onProgre
   });
 }
 
-// ── EBOOT build ──────────────────────────────────────────────────────────────
+// ── EBOOT 빌드 ──────────────────────────────────────────────────────────────
 async function startEbootBuild() {
   if (ebootWorking || !ebootFiles.length || pendingCues.length > 0) return;
 
@@ -727,7 +807,7 @@ async function startEbootBuild() {
 
   const t0 = performance.now();
 
-  // Parallel compression: compress blocks on main thread, then send to eboot-worker for assembly
+  // 병렬 압축: 메인 스레드에서 블록을 압축한 후 조립을 위해 eboot-worker로 전송
   let preCompressed = undefined;
   if (numThreads > 1) {
     try {
@@ -758,11 +838,11 @@ async function startEbootBuild() {
     const msg = e.data;
     if (msg.type === 'progress') {
       if (preCompressed) {
-        // Scale assembly progress into 90-96% (leave room for zip packaging)
+        // 조립 진행률을 90-96%로 스케일 (ZIP 패키징을 위한 여유 공간)
         const scaled = 0.90 + msg.pct * 0.06;
         showEbootProgress(Math.min(scaled, 0.96), msg.label);
       } else {
-        // Cap at 96% — zip packaging takes the remaining 4%
+        // 96%로 제한 — ZIP 패키징이 나머지 4%를 차지
         showEbootProgress(Math.min(msg.pct * 0.96, 0.96), msg.label);
       }
     } else if (msg.type === 'done') {

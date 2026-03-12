@@ -1,15 +1,15 @@
-// ── EBOOT artwork generation ─────────────────────────────────────────────────
+// ── EBOOT 아트워크 생성 ──────────────────────────────────────────────────────
 //
-// Generates default ICON0, PIC0, and PIC1 PNG images using Canvas 2D.
-// These are the artwork slots in the PBP container that the PSP XMB displays:
-//   ICON0: 144×80  — small icon shown in the game list
-//   PIC0:  310×180 — info overlay on the game details screen
-//   PIC1:  480×272 — full-screen background behind PIC0
+// Canvas 2D를 사용하여 기본 ICON0, PIC0, PIC1 PNG 이미지를 생성합니다.
+// 이는 PSP XMB가 표시하는 PBP 컨테이너의 아트워크 슬롯입니다:
+//   ICON0: 144×80  — 게임 목록에 표시되는 작은 아이콘
+//   PIC0:  310×180 — 게임 상세 화면의 정보 오버레이
+//   PIC1:  480×272 — PIC0 뒤의 전체 화면 배경
 //
-// The defaults render the game title and disc ID on a dark background.
-// Users can replace any slot with custom artwork via the UI.
+// 기본값은 어두운 배경에 게임 타이틀과 디스크 ID를 렌더링합니다.
+// 사용자는 UI를 통해 아무 슬롯이나 커스텀 아트워크로 교체할 수 있습니다.
 
-/** Find the largest font size (between maxSize and minSize) that fits text in maxWidth. */
+/** maxWidth 안에 텍스트가 들어가는 가장 큰 폰트 크기(maxSize와 minSize 사이)를 찾습니다. */
 function fitText(ctx, text, maxWidth, maxSize, minSize) {
   for (let size = maxSize; size >= minSize; size--) {
     ctx.font = `bold ${size}px sans-serif`;
@@ -18,7 +18,7 @@ function fitText(ctx, text, maxWidth, maxSize, minSize) {
   return minSize;
 }
 
-/** Word-wrap text into at most maxLines lines that fit within maxWidth. */
+/** 텍스트를 maxWidth 안에 들어가는 최대 maxLines 줄로 줄바꿈합니다. */
 function wrapText(ctx, text, maxWidth, maxLines) {
   const words = text.split(' ');
   const lines = [];
@@ -40,7 +40,7 @@ function wrapText(ctx, text, maxWidth, maxLines) {
   return lines;
 }
 
-/** Find the largest font size where word-wrapped text fits within maxWidth × maxLines. */
+/** 줄바꿈된 텍스트가 maxWidth × maxLines 안에 들어가는 가장 큰 폰트 크기를 찾습니다. */
 function fitTextWrapped(ctx, text, maxWidth, maxSize, minSize, maxLines) {
   for (let sz = maxSize; sz >= minSize; sz--) {
     ctx.font = `bold ${sz}px sans-serif`;
@@ -55,12 +55,12 @@ function fitTextWrapped(ctx, text, maxWidth, maxSize, minSize, maxLines) {
 
 function drawTitleBlock(ctx, text, opts) {
   const { centerX, maxWidth, maxSize, minSize, maxLines } = opts;
-  // Try single line first
+  // 먼저 한 줄로 시도
   let fontSize = fitText(ctx, text, maxWidth, maxSize, minSize);
   ctx.font = `bold ${fontSize}px sans-serif`;
   let lines;
   if (ctx.measureText(text).width > maxWidth) {
-    // Word-wrap to multiple lines at a larger size
+    // 더 큰 크기로 여러 줄에 걸쳐 줄바꿈
     const result = fitTextWrapped(ctx, text, maxWidth, maxSize, minSize, maxLines);
     fontSize = result.fontSize;
     lines = result.lines;
@@ -86,29 +86,29 @@ function drawAccentLine(ctx, centerX, y, halfWidth) {
   ctx.stroke();
 }
 
-/** Generate a 144×80 ICON0 PNG with the game title on a dark background. */
+/** 어두운 배경에 게임 타이틀이 있는 80×80 ICON0 PNG를 생성합니다. */
 function generateDefaultIcon0(title) {
   const c = document.createElement('canvas');
-  c.width = 144; c.height = 80;
+  c.width = 80; c.height = 80;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(0, 0, 144, 80);
+  ctx.fillRect(0, 0, 80, 80);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const displayTitle = (title || 'PS1 Game').length > 30
     ? (title || 'PS1 Game').slice(0, 30) + '...' : (title || 'PS1 Game');
-  const fontSize = fitText(ctx, displayTitle, 128, 22, 9);
+  const fontSize = fitText(ctx, displayTitle, 70, 16, 7);
   ctx.font = `bold ${fontSize}px sans-serif`;
   ctx.fillStyle = '#fff';
-  ctx.fillText(displayTitle, 72, 32);
-  drawAccentLine(ctx, 72, 52, 40);
+  ctx.fillText(displayTitle, 40, 30);
+  drawAccentLine(ctx, 40, 48, 28);
   ctx.fillStyle = '#666';
-  ctx.font = '8px sans-serif';
-  ctx.fillText('PlayStation', 72, 65);
+  ctx.font = '7px sans-serif';
+  ctx.fillText('PlayStation', 40, 60);
   return canvasToUint8Array(c);
 }
 
-/** Generate a 310×180 PIC0 PNG with the game title and disc ID. */
+/** 게임 타이틀과 디스크 ID가 있는 310×180 PIC0 PNG를 생성합니다. */
 function generateDefaultPic0(title, discId) {
   const c = document.createElement('canvas');
   c.width = 310; c.height = 180;
@@ -132,7 +132,7 @@ function generateDefaultPic0(title, discId) {
   return canvasToUint8Array(c);
 }
 
-/** Generate a 480×272 PIC1 PNG with the game title on a gradient background. */
+/** 그라데이션 배경에 게임 타이틀이 있는 480×272 PIC1 PNG를 생성합니다. */
 function generateDefaultPic1(title) {
   const c = document.createElement('canvas');
   c.width = 480; c.height = 272;

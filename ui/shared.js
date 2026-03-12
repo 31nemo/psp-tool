@@ -1,19 +1,19 @@
-// Shared UI utilities and helpers
+// 공유 UI 유틸리티 및 헬퍼
 //
-// This file is loaded first (before convert.js, eboot-ui.js, diagnose.js) and
-// provides common functions used across all tabs: file size formatting, download
-// triggers, format detection, disc ID auto-detection, CUE parsing, artwork
-// management, tab switching, and a minimal ZIP creator for EBOOT downloads.
+// 이 파일은 가장 먼저 로드되며 (convert.js, eboot-ui.js, diagnose.js 이전)
+// 모든 탭에서 사용되는 공통 함수를 제공합니다: 파일 크기 포맷팅, 다운로드
+// 트리거, 포맷 감지, 디스크 ID 자동 감지, CUE 파싱, 아트워크
+// 관리, 탭 전환, EBOOT 다운로드용 최소 ZIP 생성기.
 //
-// All functions are globals (no module system — UI scripts are concatenated
-// by build.js into a single <script> block).
+// 모든 함수는 전역(모듈 시스템 없음 — UI 스크립트는 build.js에 의해
+// 단일 <script> 블록으로 연결됨).
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const ISO_BLOCK_SIZE = 0x9300; // 37,632 bytes per PSISOIMG block
+// ── 상수 ────────────────────────────────────────────────────────────────────
+const ISO_BLOCK_SIZE = 0x9300; // PSISOIMG 블록당 37,632 바이트
 
-// ── Utilities ────────────────────────────────────────────────────────────────
+// ── 유틸리티 ────────────────────────────────────────────────────────────────
 
-/** Format a byte count as a human-readable string (e.g. 1.23 GB). */
+/** 바이트 수를 사람이 읽기 쉬운 문자열로 포맷합니다 (예: 1.23 GB). */
 function formatSize(n) {
   if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
@@ -21,7 +21,7 @@ function formatSize(n) {
   return n + ' B';
 }
 
-/** Trigger a browser download of a Uint8Array as a named file. */
+/** Uint8Array를 지정된 파일명으로 브라우저 다운로드를 트리거합니다. */
 function download(data, filename) {
   const blob = new Blob([data], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
@@ -32,12 +32,12 @@ function download(data, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-// ── Minimal ZIP creator (single stored file, no compression) ────────────────
-// Used to wrap EBOOT.PBP in a ZIP for download, preserving the filename.
-// Implements the bare minimum of PKZIP's APPNOTE spec: one local file header,
-// one central directory entry, and an end-of-central-directory record.
+// ── 최소 ZIP 생성기 (단일 저장 파일, 압축 없음) ─────────────────────────────
+// EBOOT.PBP를 파일명을 보존하면서 다운로드용 ZIP으로 감싸는 데 사용합니다.
+// PKZIP APPNOTE 스펙의 최소 구현: 로컬 파일 헤더 하나,
+// 중앙 디렉터리 항목 하나, 중앙 디렉터리 끝 레코드 하나.
 
-/** CRC-32 (ISO 3309) with lazy table initialization. */
+/** CRC-32 (ISO 3309), 지연 테이블 초기화 방식. */
 function crc32(data) {
   let table = crc32.table;
   if (!table) {
@@ -53,18 +53,18 @@ function crc32(data) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-/** Create a ZIP archive containing one or more stored (uncompressed) files.
+/** 하나 이상의 저장(비압축) 파일을 포함하는 ZIP 아카이브를 생성합니다.
  *  @param {Array<{name: string, data: Uint8Array}>} entries */
 function createZip(entries) {
   const enc = new TextEncoder();
 
-  // Pre-compute per-entry metadata
+  // 항목별 메타데이터 사전 계산
   const meta = entries.map(e => {
     const nameBytes = enc.encode(e.name);
     return { nameBytes, crc: crc32(e.data), size: e.data.length, nameLen: nameBytes.length };
   });
 
-  // Total size: local headers + data + central directory + EOCD
+  // 전체 크기: 로컬 헤더 + 데이터 + 중앙 디렉터리 + EOCD
   const localSize = meta.reduce((sum, m) => sum + 30 + m.nameLen + m.size, 0);
   const cdSize = meta.reduce((sum, m) => sum + 46 + m.nameLen, 0);
   const totalSize = localSize + cdSize + 22;
@@ -74,10 +74,10 @@ function createZip(entries) {
   const bytes = new Uint8Array(buf);
   let off = 0;
 
-  // Track local header offsets for the central directory
+  // 중앙 디렉터리를 위한 로컬 헤더 오프셋 추적
   const localOffsets = [];
 
-  // Local file headers + data
+  // 로컬 파일 헤더 + 데이터
   for (let i = 0; i < entries.length; i++) {
     const m = meta[i];
     localOffsets.push(off);
@@ -96,7 +96,7 @@ function createZip(entries) {
     bytes.set(entries[i].data, off); off += m.size;
   }
 
-  // Central directory
+  // 중앙 디렉터리
   const cdOffset = off;
   for (let i = 0; i < entries.length; i++) {
     const m = meta[i];
@@ -120,7 +120,7 @@ function createZip(entries) {
     bytes.set(m.nameBytes, off); off += m.nameLen;
   }
 
-  // End of central directory
+  // 중앙 디렉터리 끝
   const cdLen = off - cdOffset;
   view.setUint32(off, 0x06054B50, true); off += 4;
   view.setUint16(off, 0, true); off += 2;
@@ -134,9 +134,9 @@ function createZip(entries) {
   return new Uint8Array(buf);
 }
 
-/** Create a ZIP archive in a Web Worker (off the main thread).
+/** Web Worker에서 ZIP 아카이브를 생성합니다 (메인 스레드 외부).
  *  @param {Array<{name: string, data: Uint8Array}>} entries
- *  @param {function(string, number, number): void} [onProgress] - called with (phase, index, total)
+ *  @param {function(string, number, number): void} [onProgress] - (phase, index, total)로 호출됨
  *  @returns {Promise<Uint8Array>} */
 function createZipInWorker(entries, onProgress) {
   return new Promise((resolve, reject) => {
@@ -162,7 +162,7 @@ function createZipInWorker(entries, onProgress) {
   });
 }
 
-// ── Tab switching ─────────────────────────────────────────────────────────────
+// ── 탭 전환 ──────────────────────────────────────────────────────────────────
 function switchTab(tabId) {
   for (const btn of document.querySelectorAll('.tab-btn')) {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
@@ -176,16 +176,21 @@ for (const btn of document.querySelectorAll('.tab-btn')) {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 }
 
-// ── Artwork state ────────────────────────────────────────────────────────────
-// Tracks the current artwork PNGs and whether each was user-provided (custom)
-// or auto-generated. Custom artwork is preserved when the title/discId changes;
-// auto-generated artwork gets regenerated.
+// ── 아트워크 상태 ────────────────────────────────────────────────────────────
+// 현재 아트워크 PNG와 각각이 사용자가 제공한 것(커스텀)인지
+// 자동 생성된 것인지를 추적합니다. 커스텀 아트워크는 타이틀/디스크ID가 변경되어도
+// 보존되며, 자동 생성된 아트워크는 재생성됩니다.
 let currentIcon0 = null;
+let currentIcon1 = null; // ICON1 원본 바이트 (PMF 또는 PNG) — 애니메이션 아이콘
 let currentPic0 = null;
 let currentPic1 = null;
 let icon0IsCustom = false;
 let pic0IsCustom = false;
 let pic1IsCustom = false;
+// × 버튼으로 명시적으로 제거한 슬롯 — isCustom과 별개로 regenerate를 막음
+let icon0Deleted = false;
+let pic0Deleted  = false;
+let pic1Deleted  = false;
 
 function canvasToUint8Array(canvas) {
   return new Promise(resolve => {
@@ -197,8 +202,8 @@ function canvasToUint8Array(canvas) {
 
 
 /**
- * Regenerate default artwork for any slot not overridden by the user.
- * Optionally fetches artwork from the psx-artwork repo by disc ID.
+ * 사용자가 재정의하지 않은 슬롯의 기본 아트워크를 재생성합니다.
+ * 선택적으로 디스크 ID로 psx-artwork 저장소에서 아트워크를 가져옵니다.
  */
 async function regenerateDefaults() {
   const title = ebootTitle.value.trim();
@@ -206,21 +211,21 @@ async function regenerateDefaults() {
   const fetchCb = document.getElementById('ebootFetchArt');
   const shouldFetch = fetchCb && fetchCb.checked && discId;
 
-  // Fetch all three types in parallel (each may independently 404)
+  // 세 가지 타입 모두 병렬로 가져오기 (각각 독립적으로 404가 될 수 있음)
   const fetched = shouldFetch
     ? await fetchAllArtwork(discId)
     : { icon0: null, pic0: null, pic1: null };
 
-  if (!icon0IsCustom) {
+  if (!icon0IsCustom && !icon0Deleted) {
     if (fetched.icon0) {
       currentIcon0 = await resizeImageToUint8Array(
-        new Blob([fetched.icon0], { type: 'image/jpeg' }), 144, 80);
+        new Blob([fetched.icon0], { type: 'image/jpeg' }), 80, 80);
     } else {
       currentIcon0 = await generateDefaultIcon0(title);
     }
     artIcon0.src = URL.createObjectURL(new Blob([currentIcon0], { type: 'image/png' }));
   }
-  if (!pic0IsCustom) {
+  if (!pic0IsCustom && !pic0Deleted) {
     if (fetched.pic0) {
       currentPic0 = await resizeImageToUint8Array(
         new Blob([fetched.pic0], { type: 'image/jpeg' }), 310, 180);
@@ -229,7 +234,7 @@ async function regenerateDefaults() {
     }
     artPic0.src = URL.createObjectURL(new Blob([currentPic0], { type: 'image/png' }));
   }
-  if (!pic1IsCustom) {
+  if (!pic1IsCustom && !pic1Deleted) {
     if (fetched.pic1) {
       currentPic1 = await resizeImageToUint8Array(
         new Blob([fetched.pic1], { type: 'image/jpeg' }), 480, 272);
@@ -240,7 +245,35 @@ async function regenerateDefaults() {
   }
 }
 
-/** Load an image file, resize it to targetW×targetH, and return as PNG Uint8Array. */
+/**
+ * 이미지 파일을 로드하여 targetW×targetH에 레터박스 방식으로 맞춥니다 (종횡비 보존,
+ * 나머지 공간은 어두운 배경으로 채움). PNG Uint8Array를 반환합니다.
+ * 정사각형 커버 이미지가 144×80으로 왜곡되지 않도록 ICON0에 사용됩니다.
+ */
+function containImageToUint8Array(file, targetW, targetH) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = targetW; c.height = targetH;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, targetW, targetH);
+      const scale = Math.min(targetW / img.naturalWidth, targetH / img.naturalHeight);
+      const sw = Math.round(img.naturalWidth * scale);
+      const sh = Math.round(img.naturalHeight * scale);
+      ctx.drawImage(img, Math.round((targetW - sw) / 2), Math.round((targetH - sh) / 2), sw, sh);
+      c.toBlob(blob => {
+        blob.arrayBuffer().then(buf => resolve(new Uint8Array(buf)));
+      }, 'image/png');
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error('Failed to load image')); };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/** 이미지 파일을 로드하여 targetW×targetH로 리사이즈하고 PNG Uint8Array로 반환합니다. */
 function resizeImageToUint8Array(file, targetW, targetH) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -260,9 +293,9 @@ function resizeImageToUint8Array(file, targetW, targetH) {
   });
 }
 
-// ── Format detection ─────────────────────────────────────────────────────────
+// ── 포맷 감지 ─────────────────────────────────────────────────────────────
 
-/** Detect disc image format by reading the 4-byte magic: CISO, ZISO, or ISO. */
+/** 4바이트 매직을 읽어 디스크 이미지 포맷을 감지합니다: CISO, ZISO, 또는 ISO. */
 async function detectConvertFormat(file) {
   const header = new Uint8Array(await file.slice(0, 32).arrayBuffer());
   const magic = String.fromCharCode(header[0], header[1], header[2], header[3]);
@@ -279,11 +312,11 @@ function parseCsoHeader(buf) {
   };
 }
 
-// ── Auto-detect PS1 disc ID ──────────────────────────────────────────────────
-// Duplicates some logic from eboot/discid.js for use in the UI thread (the
-// eboot/ modules run in workers and aren't available here).
+// ── PS1 디스크 ID 자동 감지 ─────────────────────────────────────────────────
+// UI 스레드에서 사용하기 위해 eboot/discid.js의 일부 로직을 복제합니다
+// (eboot/ 모듈은 워커에서 실행되어 여기서는 사용할 수 없음).
 
-/** Extract a clean game title from a filename by stripping extensions and tags. */
+/** 확장자와 태그를 제거하여 파일명에서 깨끗한 게임 타이틀을 추출합니다. */
 function titleFromFilename(name) {
   return name
     .replace(/\.(bin|img|iso|cue)$/i, '')
@@ -293,8 +326,8 @@ function titleFromFilename(name) {
 }
 
 /**
- * Auto-detect disc ID and title from a PS1 BIN/ISO by reading SYSTEM.CNF.
- * Best-effort — returns null on failure without throwing.
+ * SYSTEM.CNF를 읽어 PS1 BIN/ISO에서 디스크 ID와 타이틀을 자동 감지합니다.
+ * 최선 시도 방식 — 실패 시 예외 없이 null을 반환합니다.
  */
 async function autoDetectDiscId(file) {
   try {
@@ -338,15 +371,15 @@ async function autoDetectDiscId(file) {
       pos += recLen;
     }
     if (title) return { discId: null, title };
-  } catch (e) { /* best-effort */ }
+  } catch (e) { /* 최선 시도 */ }
   return null;
 }
 
-// ── CUE helpers ──────────────────────────────────────────────────────────────
-// Light CUE parsing for the UI layer — extracts FILE references and track info
-// to pair CUE sheets with their BIN files and build disc metadata.
+// ── CUE 헬퍼 ────────────────────────────────────────────────────────────────
+// UI 레이어를 위한 경량 CUE 파싱 — FILE 참조와 트랙 정보를 추출하여
+// CUE 시트를 BIN 파일과 페어링하고 디스크 메타데이터를 빌드합니다.
 
-/** Extract BIN filenames referenced by FILE directives in a CUE sheet. */
+/** CUE 시트의 FILE 지시문에서 참조하는 BIN 파일명을 추출합니다. */
 function extractBinNames(cueText) {
   const names = [];
   for (const line of cueText.split('\n')) {
@@ -356,7 +389,7 @@ function extractBinNames(cueText) {
   return names;
 }
 
-/** Match BIN filenames from a CUE to available File objects; merge multi-BIN into one. */
+/** CUE의 BIN 파일명을 사용 가능한 File 객체와 매칭합니다; 멀티 BIN은 하나로 병합합니다. */
 function mergeCueBins(binNames, availableBins) {
   if (binNames.length === 0) return null;
   const matched = [];
@@ -375,7 +408,7 @@ function mergeCueBins(binNames, availableBins) {
   return { merged, matched, fileSizes: matched.map(f => f.size) };
 }
 
-/** Parse CUE track data for UI display and TOC generation (mirrors eboot/cue.js). */
+/** UI 표시 및 TOC 생성을 위해 CUE 트랙 데이터를 파싱합니다 (eboot/cue.js와 동일). */
 function parseCueTracksUI(cueText) {
   const tracks = [];
   let current = null;

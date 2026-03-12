@@ -69,9 +69,9 @@
       <div class="tab-panel" id="panel-eboot">
         <div class="drop-zone" id="ebootDropZone" data-testid="eboot-drop-zone">
           <span class="icon">&#128191;</span>
-          <p>Drop PS1 disc image(s) here<br><small>.bin, .cue files (PS1)</small></p>
+          <p>Drop PS1 disc image(s) or EBOOT.PBP here<br><small>.bin, .cue (PS1) &nbsp;·&nbsp; .pbp (edit existing)</small></p>
         </div>
-        <input type="file" id="ebootFileInput" data-testid="eboot-file-input" accept=".bin,.img,.cue" multiple>
+        <input type="file" id="ebootFileInput" data-testid="eboot-file-input" accept=".bin,.img,.cue,.pbp" multiple>
 
         <div class="file-info" id="ebootFileInfo">
           <div class="name" id="ebootFileName"></div>
@@ -82,69 +82,117 @@
         <div class="add-disc-hint" id="addDiscHint" style="display:none">Drop more discs to add them (up to 5)</div>
 
         <div class="eboot-opts" id="ebootOpts">
-          <label for="ebootTitle">Game Title</label>
-          <input type="text" id="ebootTitle" data-testid="eboot-title" placeholder="e.g. FINAL FANTASY VII">
-          <label for="ebootDiscId">Disc ID <span class="detected" id="discIdDetected"></span></label>
-          <input type="text" id="ebootDiscId" data-testid="eboot-disc-id" placeholder="e.g. SCUS94163">
-          <label>Compression Level <span class="info-tip" title="Level 6 offers a good balance of size and speed. Higher levels take significantly longer with diminishing returns.">&#9432;</span></label>
-          <div class="range-row">
-            <input type="range" id="ebootCompression" min="0" max="9" value="5">
-            <span class="range-val" id="ebootCompressionVal">5</span>
-            <span class="range-label" id="ebootCompressionLabel">High</span>
-          </div>
-          <label>Workers</label>
-          <div class="range-row">
-            <input type="range" id="ebootThreads" min="1" max="8" value="2">
-            <span class="range-val" id="ebootThreadsVal">2</span>
-          </div>
-          <details class="misc-section">
-            <summary>Advanced</summary>
-            <div class="misc-inner">
-              <label class="checkbox-row">
-                <input type="checkbox" id="ebootFetchArt"> Fetch artwork by disc ID
-              </label>
-              <label for="ebootParentalLevel">Parental Level</label>
-              <select id="ebootParentalLevel">
-                <option value="1">1 &ndash; Youngest</option>
-                <option value="2">2 &ndash; Early Childhood</option>
-                <option value="3" selected>3 &ndash; Everyone</option>
-                <option value="4">4 &ndash; Everyone 10+</option>
-                <option value="5">5 &ndash; Teen</option>
-                <option value="9">9 &ndash; Mature</option>
-                <option value="10">10 &ndash; Adults Only</option>
-                <option value="11">11 &ndash; Unrestricted</option>
-              </select>
-              <label for="ebootRegion">Region</label>
-              <select id="ebootRegion">
-                <option value="0x8000" selected>NTSC-U (Americas)</option>
-                <option value="0x4000">NTSC-J (Japan)</option>
-                <option value="0x0001">PAL (Europe/Australia)</option>
-              </select>
+          <div class="eboot-opts-row">
+            <div class="eboot-settings">
+              <label for="ebootTitle">Game Title</label>
+              <input type="text" id="ebootTitle" data-testid="eboot-title" placeholder="e.g. FINAL FANTASY VII">
+              <label for="ebootDiscId">Disc ID <span class="detected" id="discIdDetected"></span></label>
+              <input type="text" id="ebootDiscId" data-testid="eboot-disc-id" placeholder="e.g. SCUS94163">
+              <label>Compression Level <span class="info-tip" title="Level 6 offers a good balance of size and speed. Higher levels take significantly longer with diminishing returns.">&#9432;</span></label>
+              <div class="range-row">
+                <input type="range" id="ebootCompression" min="0" max="9" value="5">
+                <span class="range-val" id="ebootCompressionVal">5</span>
+                <span class="range-label" id="ebootCompressionLabel">High</span>
+              </div>
+              <label>Workers</label>
+              <div class="range-row">
+                <input type="range" id="ebootThreads" min="1" max="8" value="2">
+                <span class="range-val" id="ebootThreadsVal">2</span>
+              </div>
+              <details class="misc-section">
+                <summary>Advanced</summary>
+                <div class="misc-inner">
+                  <label class="checkbox-row">
+                    <input type="checkbox" id="ebootFetchArt"> Fetch artwork by disc ID
+                  </label>
+                  <label for="ebootParentalLevel">Parental Level</label>
+                  <select id="ebootParentalLevel">
+                    <option value="1">1 &ndash; Youngest</option>
+                    <option value="2">2 &ndash; Early Childhood</option>
+                    <option value="3" selected>3 &ndash; Everyone</option>
+                    <option value="4">4 &ndash; Everyone 10+</option>
+                    <option value="5">5 &ndash; Teen</option>
+                    <option value="9">9 &ndash; Mature</option>
+                    <option value="10">10 &ndash; Adults Only</option>
+                    <option value="11">11 &ndash; Unrestricted</option>
+                  </select>
+                  <label for="ebootRegion">Region</label>
+                  <select id="ebootRegion">
+                    <option value="0x8000" selected>NTSC-U (Americas)</option>
+                    <option value="0x4000">NTSC-J (Japan)</option>
+                    <option value="0x0001">PAL (Europe/Australia)</option>
+                  </select>
+                </div>
+              </details>
+              <div class="artwork-section">
+                <label>Artwork (click to replace)</label>
+                <div class="artwork-row">
+                  <div class="artwork-slot slot-icon0">
+                    <span class="art-label">ICON0 (Main)</span>
+                    <img class="art-preview" id="artIcon0">
+                    <input type="file" id="artIcon0Input" accept="image/png,image/jpeg" style="display:none">
+                    <span class="art-dims">144x80</span>
+                    <div class="art-btns">
+                      <button class="art-reset" id="artIcon0Reset" style="display:none">reset</button>
+                      <button class="art-delete" id="artIcon0Delete">×</button>
+                    </div>
+                  </div>
+                  <div class="artwork-slot slot-icon1">
+                    <span class="art-label">ICON1 (Animation)</span>
+                    <img class="art-preview" id="artIcon1">
+                    <input type="file" id="artIcon1Input" style="display:none">
+                    <span class="art-dims" id="icon1Dims">PMF/PNG</span>
+                    <div class="art-btns">
+                      <button class="art-delete" id="artIcon1Delete" style="display:none">×</button>
+                    </div>
+                  </div>
+                  <div class="artwork-slot">
+                    <span class="art-label">PIC0 (Information)</span>
+                    <img class="art-preview" id="artPic0">
+                    <input type="file" id="artPic0Input" accept="image/png,image/jpeg" style="display:none">
+                    <span class="art-dims">310x180</span>
+                    <div class="art-btns">
+                      <button class="art-reset" id="artPic0Reset" style="display:none">reset</button>
+                      <button class="art-delete" id="artPic0Delete">×</button>
+                    </div>
+                  </div>
+                  <div class="artwork-slot">
+                    <span class="art-label">PIC1 (Background)</span>
+                    <img class="art-preview" id="artPic1">
+                    <input type="file" id="artPic1Input" accept="image/png,image/jpeg" style="display:none">
+                    <span class="art-dims">480x272</span>
+                    <div class="art-btns">
+                      <button class="art-reset" id="artPic1Reset" style="display:none">reset</button>
+                      <button class="art-delete" id="artPic1Delete">×</button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+              <!-- 게임 리소스 자동 검색 -->
+              <div id="resourceSearchSection" class="resource-search-section" style="display:none">
+                <label>Game Resource Search</label>
+                <div class="resource-search-links">
+                  <a id="rsLinkPsxdata" href="#" target="_blank" class="rs-link">🌐 PSX DataCenter</a>
+                  <a id="rsLinkUnlucky" href="https://unluckyforsome.github.io/PSX1G1B1C1D/" target="_blank" class="rs-link">📀 UnluckyForSome</a>
+                </div>
+              </div>
             </div>
-          </details>
-          <div class="artwork-section">
-            <label>Artwork (click to replace)</label>
-            <div class="artwork-row">
-              <div class="artwork-slot">
-                <span class="art-label">ICON0</span>
-                <img class="art-preview" id="artIcon0">
-                <input type="file" id="artIcon0Input" accept="image/png,image/jpeg" style="display:none">
-                <span class="art-dims">144x80</span>
-                <button class="art-reset" id="artIcon0Reset">reset</button>
+            <!-- Cover image shown on the right -->
+            <div class="eboot-cover" id="ebootCoverPanel">
+              <span class="art-label">Boxart</span>
+              <img class="eboot-cover-img" id="ebootCoverImg">
+              <div class="cover-dl-row" id="coverDlRow" style="display:none">
+                <button class="cover-dl-btn" onclick="coverDownloadOriginal()">(Original)</button>
+                <button class="cover-dl-btn" onclick="coverDownloadPng(510,510,'(510x510)')">(510x510)</button>
+                <button class="cover-dl-btn" onclick="coverDownloadPng(200,200,'(200x200)')">(200x200)</button>
               </div>
-              <div class="artwork-slot">
-                <span class="art-label">PIC0</span>
-                <img class="art-preview" id="artPic0">
-                <input type="file" id="artPic0Input" accept="image/png,image/jpeg" style="display:none">
-                <span class="art-dims">310x180</span>
-                <button class="art-reset" id="artPic0Reset">reset</button>
-              </div>
-              <div class="artwork-slot">
-                <span class="art-label">PIC1</span>
-                <img class="art-preview" id="artPic1">
-                <input type="file" id="artPic1Input" accept="image/png,image/jpeg" style="display:none">
-                <span class="art-dims">480x272</span>
-                <button class="art-reset" id="artPic1Reset">reset</button>
+              <div id="snapshotPanel" style="display:none">
+                <span class="art-label">Snapshot</span>
+                <img class="eboot-snapshot-img" id="ebootSnapshotImg">
+                <div class="cover-dl-row">
+                  <button class="cover-dl-btn" onclick="snapshotDownloadPng()">(320x240)</button>
+                </div>
               </div>
             </div>
           </div>
