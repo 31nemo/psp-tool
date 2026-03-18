@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
   await page.locator('[data-tab="eboot"]').click();
 });
 
-test('Multi-disc BIN drop → build EBOOT → download ZIP', async ({ page }) => {
+test('Multi-disc BIN drop → build EBOOT → download PBP', async ({ page }) => {
   await waitForArtwork(page);
   await expect(page).toHaveScreenshot('eboot-tab-initial.png');
 
@@ -82,27 +82,16 @@ test('Multi-disc BIN drop → build EBOOT → download ZIP', async ({ page }) =>
   await waitForArtwork(page);
   await expect(page).toHaveScreenshot('eboot-multi-disc-build-done.png');
 
-  // Verify download is a ZIP named after the disc ID
-  expect(download.suggestedFilename()).toBe('SLUS00001.zip');
+  // Verify download is a PBP named after the first disc file
+  expect(download.suggestedFilename()).toBe('ps1-disc1.PBP');
 
-  // Read the ZIP and verify it contains an EBOOT.PBP
+  // Read the PBP and verify it starts with \0PBP magic
   const downloadPath = await download.path();
-  const zipBytes = new Uint8Array(fs.readFileSync(downloadPath));
-  // ZIP files start with PK\x03\x04
-  expect(zipBytes[0]).toBe(0x50); // P
-  expect(zipBytes[1]).toBe(0x4B); // K
-  expect(zipBytes[2]).toBe(0x03);
-  expect(zipBytes[3]).toBe(0x04);
-
-  // The ZIP should contain SLUS00001/EBOOT.PBP — verify the filename appears in the ZIP
-  const zipStr = new TextDecoder('ascii').decode(zipBytes);
-  expect(zipStr).toContain('SLUS00001/EBOOT.PBP');
-
-  // Verify the PBP inside starts with \0PBP magic
-  // Find the PBP data after the local file header
-  const pbpMagic = String.fromCharCode(0x00) + 'PBP';
-  const pbpIdx = zipStr.indexOf(pbpMagic);
-  expect(pbpIdx).toBeGreaterThan(0);
+  const pbpBytes = new Uint8Array(fs.readFileSync(downloadPath));
+  expect(pbpBytes[0]).toBe(0x00);
+  expect(pbpBytes[1]).toBe(0x50); // P
+  expect(pbpBytes[2]).toBe(0x42); // B
+  expect(pbpBytes[3]).toBe(0x50); // P
 });
 
 test('Single disc with CUE+BIN → build EBOOT', async ({ page }) => {
@@ -134,5 +123,5 @@ test('Single disc with CUE+BIN → build EBOOT', async ({ page }) => {
   await waitForArtwork(page);
   await expect(page).toHaveScreenshot('eboot-cue-bin-build-done.png');
 
-  expect(download.suggestedFilename()).toBe('SLUS00001.zip');
+  expect(download.suggestedFilename()).toBe('ps1-disc1.PBP');
 });
