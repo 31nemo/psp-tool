@@ -880,5 +880,11 @@ async function startEbootBuild() {
   const icon0 = currentIcon0 || undefined;
   const pic0 = currentPic0 || undefined;
   const pic1 = currentPic1 || undefined;
-  worker.postMessage({ files, title, discIds, compressionLevel, parentalLevel, region, discInfo, icon0, pic0, pic1, preCompressed });
+  const transferables = [];
+  if (preCompressed) {
+    for (const disc of preCompressed) {
+      for (const part of disc.parts) transferables.push(part.buffer);
+    }
+  }
+  worker.postMessage({ files, title, discIds, compressionLevel, parentalLevel, region, discInfo, icon0, pic0, pic1, preCompressed }, transferables);
 }
