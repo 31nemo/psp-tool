@@ -838,34 +838,22 @@ async function startEbootBuild() {
     const msg = e.data;
     if (msg.type === 'progress') {
       if (preCompressed) {
-        // 조립 진행률을 90-96%로 스케일 (ZIP 패키징을 위한 여유 공간)
-        const scaled = 0.90 + msg.pct * 0.06;
-        showEbootProgress(Math.min(scaled, 0.96), msg.label);
+        const scaled = 0.90 + msg.pct * 0.10;
+        showEbootProgress(Math.min(scaled, 1), msg.label);
       } else {
-        // 96%로 제한 — ZIP 패키징이 나머지 4%를 차지
-        showEbootProgress(Math.min(msg.pct * 0.96, 0.96), msg.label);
+        showEbootProgress(Math.min(msg.pct, 1), msg.label);
       }
     } else if (msg.type === 'done') {
-      showEbootProgress(0.97, 'Packaging ZIP...');
       const ebootResult = new Uint8Array(msg.result);
       const ebootSize = ebootResult.length;
-      const zipPath = discId + '/EBOOT.PBP';
-      createZipInWorker([{ name: zipPath, data: ebootResult }], (phase) => {
-        const step = phase === 'crc' ? 'Checksumming' : phase === 'alloc' ? 'Allocating' : 'Copying';
-        showEbootProgress(0.97, `Packaging ZIP \u2014 ${step}...`);
-      }).then(zipData => {
-        const zipName = discId + '.zip';
-        download(zipData, zipName);
-        const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-        ebootStatusEl.textContent = `Done in ${elapsed}s \u2014 ${formatSize(ebootSize)} saved as ${zipName}`;
-        showEbootProgress(1, 'Complete');
-        if (msg.buildLog) showBuildLogDownload(msg.buildLog);
-        finish();
-      }).catch(err => {
-        ebootStatusEl.textContent = `ZIP error: ${err.message}`;
-        ebootStatusEl.className = 'status error';
-        finish();
-      });
+      const baseName = (ebootFiles[0]?.file.name || 'EBOOT').replace(/\.[^.]+$/, '');
+      const pbpName = baseName + '.PBP';
+      download(ebootResult, pbpName);
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+      ebootStatusEl.textContent = `Done in ${elapsed}s \u2014 ${formatSize(ebootSize)} saved as ${pbpName}`;
+      showEbootProgress(1, 'Complete');
+      if (msg.buildLog) showBuildLogDownload(msg.buildLog);
+      finish();
     } else if (msg.type === 'error') {
       ebootStatusEl.textContent = `Error: ${msg.message}`;
       ebootStatusEl.className = 'status error';
